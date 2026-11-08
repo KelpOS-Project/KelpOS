@@ -1,7 +1,7 @@
-Current State of Contributers
+Current State of Contributers<br><br>
 
-Shroomstech: Project Leader and Creator
-Gemini AI & Github Copilot: Helpers
-
-Katifetch: Unknown
-EPAXGAMING: Unknown
+Shroomstech: Project Leader and Creator<br>
+Gemini AI & Github Copilot: Helpers<br>
+<br>
+Katifetch: Unknown<br>
+EPAXGAMING: Unknown<br>
