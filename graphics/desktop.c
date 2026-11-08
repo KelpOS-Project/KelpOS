@@ -114,8 +114,19 @@ void desktop_draw(struct graphics_framebuffer *fb, bool terminal_open,
 
 _Noreturn void desktop_run(struct graphics_framebuffer *framebuffer)
 {
-    char lines[ROWS][COLUMNS + 1] = {{0}};
-    char input[COLUMNS + 1] = {0};
+    char lines[ROWS][COLUMNS + 1];
+    char input[COLUMNS + 1];
+
+    // Manuelles Nullsetzen statt = {{0}} / = {0} (verhindert memset-Aufruf)
+    for (size_t row = 0; row < ROWS; row++) {
+        for (size_t col = 0; col <= COLUMNS; col++) {
+            lines[row][col] = '\0';
+        }
+    }
+    for (size_t col = 0; col <= COLUMNS; col++) {
+        input[col] = '\0';
+    }
+
     size_t length = 0;
     bool terminal_open = false;
 

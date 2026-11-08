@@ -93,6 +93,7 @@ $(CISWN): ciswn/ciswn.c | $(BUILD_DIR)
 	$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -pedantic $< -lm -o $@
 
 $(ISO): $(KERNEL) grub/grub.cfg
+	rm -rf $(ISO_ROOT)
 	mkdir -p $(ISO_ROOT)/boot/grub
 	cp $(KERNEL) $(ISO_ROOT)/boot/kelpos.elf
 	cp grub/grub.cfg $(ISO_ROOT)/boot/grub/grub.cfg

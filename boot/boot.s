@@ -1,7 +1,6 @@
 .set ALIGN, 1 << 0
 .set MEMINFO, 1 << 1
-.set VIDEO, 1 << 2
-.set FLAGS, ALIGN | MEMINFO | VIDEO
+.set FLAGS, ALIGN | MEMINFO
 .set MAGIC, 0x1BADB002
 .set CHECKSUM, -(MAGIC + FLAGS)
 
@@ -10,10 +9,6 @@
 .long MAGIC
 .long FLAGS
 .long CHECKSUM
-.long 0
-.long 1024
-.long 768
-.long 32
 
 .section .bss
 .align 16
