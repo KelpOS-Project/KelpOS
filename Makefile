@@ -124,8 +124,8 @@ memory-test: memory/heap.c memory/heap.h tests/kernel_heap_test.c | $(BUILD_DIR)
 
 kernel-test: memory-test
 
-graphics-test: graphics/framebuffer.c graphics/framebuffer.h graphics/font.c graphics/font.h tests/graphics_framebuffer_test.c | $(BUILD_DIR)
-	$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -pedantic graphics/framebuffer.c graphics/font.c tests/graphics_framebuffer_test.c -o $(BUILD_DIR)/graphics-framebuffer-test
+graphics-test: graphics/framebuffer.c graphics/framebuffer.h graphics/font.c graphics/font.h graphics/desktop.c graphics/desktop.h tests/graphics_framebuffer_test.c | $(BUILD_DIR)
+	$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -pedantic graphics/framebuffer.c graphics/font.c graphics/desktop.c tests/graphics_framebuffer_test.c -o $(BUILD_DIR)/graphics-framebuffer-test
 	$(BUILD_DIR)/graphics-framebuffer-test
 
 boot-test: boot/multiboot.h tests/multiboot_info_test.c | $(BUILD_DIR)

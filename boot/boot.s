@@ -45,6 +45,8 @@ page_directory_3:
 .type _start, @function
 _start:
     cli
+    # Multiboot does not provide a valid stack. Set one before pushfl/popfl.
+    mov $stack_top, %esp
     cmp $0x2BADB002, %eax
     jne boot_failure
     mov %ebx, multiboot_info_address
