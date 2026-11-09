@@ -8,5 +8,6 @@ void terminal_initialize(void);
 void terminal_set_color(uint8_t color);
 void terminal_write(const char *data, size_t size);
 void terminal_write_string(const char *string);
+void terminal_clear(void);
 
 #endif

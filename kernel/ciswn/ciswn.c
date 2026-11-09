@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 
 #include <errno.h>
@@ -9,6 +10,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/reboot.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -387,7 +389,7 @@ static void stop_services(void)
         if (!any_active) {
             return;
         }
-        struct timespec interval = { .tv_sec = 0, .tv_nsec = 50000000 };
+        struct timespec interval = { .tv_sec = 0, .tv_nsec = 50000050 };
         while (nanosleep(&interval, &interval) < 0 && errno == EINTR) {
         }
         waited += 0.05;
@@ -501,15 +503,30 @@ static void free_config(void)
 
 int main(int argc, char **argv)
 {
+    if (argc == 2 && strcmp(argv[1], "--reboot") == 0) {
+        sync();
+        reboot(RB_AUTOBOOT);
+        return 0;
+    }
+
+    if (argc == 2 && strcmp(argv[1], "--poweroff") == 0) {
+        sync();
+        reboot(RB_POWER_OFF);
+        return 0;
+    }
+
     bool check_only = false;
     const char *config_path = NULL;
+
     if (argc == 3 && strcmp(argv[1], "--check") == 0) {
         check_only = true;
+        config_path = argv[2];
+    } else if (argc == 3 && strcmp(argv[1], "start") == 0) {
         config_path = argv[2];
     } else if (argc == 2) {
         config_path = argv[1];
     } else {
-        fprintf(stderr, "usage: ciswn [--check] CONFIG\n");
+        fprintf(stderr, "usage: ciswn [--check] CONFIG | ciswn start CONFIG | ciswn --reboot | ciswn --poweroff\n");
         return 2;
     }
 

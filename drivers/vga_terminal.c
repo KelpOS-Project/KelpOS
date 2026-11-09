@@ -1,6 +1,7 @@
 #include "vga_terminal.h"
 
 #include "../base/string.h"
+#include "x86_io.h"
 
 enum vga_color {
     VGA_COLOR_BLACK = 0,
@@ -23,6 +24,15 @@ static volatile uint16_t *const terminal_buffer = (volatile uint16_t *)0xB8000;
 static size_t terminal_row;
 static size_t terminal_column;
 static uint8_t terminal_color;
+
+static void update_cursor(size_t x, size_t y)
+{
+    uint16_t pos = y * VGA_WIDTH + x;
+    x86_port_write8(0x3D4, 0x0F);
+    x86_port_write8(0x3D5, (uint8_t)(pos & 0xFF));
+    x86_port_write8(0x3D4, 0x0E);
+    x86_port_write8(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
+}
 
 static uint8_t vga_entry_color(enum vga_color foreground, enum vga_color background)
 {
@@ -91,6 +101,8 @@ static void terminal_putchar(char character)
     if (terminal_row >= VGA_HEIGHT) {
         terminal_scroll();
     }
+
+    update_cursor(terminal_column, terminal_row);
 }
 
 void terminal_initialize(void)
@@ -102,6 +114,7 @@ void terminal_initialize(void)
     for (size_t row = 0; row < VGA_HEIGHT; row++) {
         terminal_clear_row(row);
     }
+    update_cursor(terminal_column, terminal_row);
 }
 
 void terminal_set_color(uint8_t color)
@@ -123,4 +136,14 @@ void terminal_write(const char *data, size_t size)
 void terminal_write_string(const char *string)
 {
     terminal_write(string, kstrlen(string));
+}
+
+void terminal_clear(void)
+{
+    for (size_t row = 0; row < VGA_HEIGHT; row++) {
+        terminal_clear_row(row);
+    }
+    terminal_row = 0;
+    terminal_column = 0;
+    update_cursor(terminal_column, terminal_row);
 }
