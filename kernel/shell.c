@@ -1,13 +1,14 @@
 #include "shell.h"
-
-#include <stdbool.h>
-#include <stddef.h>
-
+#include "bin/commands.h"
 #include "../drivers/keyboard.h"
 #include "../drivers/vga_terminal.h"
-#include "../memory/heap.h"
 
 enum { SHELL_LINE_CAPACITY = 128 };
+
+static const struct shell_command registered_commands[] = {
+    SHELL_COMMANDS,
+    { NULL, NULL, NULL }
+};
 
 static bool text_equals(const char *left, const char *right)
 {
@@ -43,36 +44,17 @@ static void execute_command(char *line)
     if (*line == '\0') {
         return;
     }
-    if (text_equals(line, "help")) {
-        terminal_write_string("Commands: help, about, clear, echo, mem, desktop\n");
-    } else if (text_equals(line, "about")) {
-        terminal_write_string("KelpOS early kernel TTY shell. No userspace yet.\n");
-    } else if (text_equals(line, "clear")) {
-        terminal_initialize();
-    } else if (text_equals(line, "echo")) {
-        terminal_write_string(argument);
-        terminal_write_string("\n");
-    } else if (text_equals(line, "mem")) {
-        terminal_write_string("Bootstrap heap free bytes: ");
-        /* Print decimal without pulling in a hosted printf implementation. */
-        char digits[24];
-        size_t count = 0;
-        size_t available = kernel_heap_available();
-        do {
-            digits[count++] = (char)('0' + available % 10);
-            available /= 10;
-        } while (available != 0 && count < sizeof(digits));
-        while (count > 0) {
-            terminal_write(&digits[--count], 1);
+
+    for (size_t i = 0; registered_commands[i].name != NULL; i++) {
+        if (text_equals(line, registered_commands[i].name)) {
+            registered_commands[i].execute(argument);
+            return;
         }
-        terminal_write_string("\n");
-    } else if (text_equals(line, "desktop")) {
-        terminal_write_string("Reboot and choose KelpOS Desktop in GRUB.\n");
-    } else {
-        terminal_write_string("Unknown command: ");
-        terminal_write_string(line);
-        terminal_write_string("\nType 'help' for commands.\n");
     }
+
+    terminal_write_string("Unknown command: ");
+    terminal_write_string(line);
+    terminal_write_string("\nType 'help' for commands.\n");
 }
 
 _Noreturn void shell_run(void)
