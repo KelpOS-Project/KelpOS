@@ -111,3 +111,5 @@ make graphics-test
 4. Open a Pull Request against the main branch with a summary of what your patch fixes or adds.
 
 Happy hacking on KelpOS!
+
+(Every Submitted PR with a fix or add WILL be tested by Nimbus32)
