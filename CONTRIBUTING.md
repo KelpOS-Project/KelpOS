@@ -53,6 +53,9 @@ make run
 
 # Full clean build + test execution + QEMU launch
 make compile
+
+# Full Compiled Build and Archived into a Bootable ISO
+make create
 ```
 
 ---
