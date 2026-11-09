@@ -18,7 +18,8 @@ KelpOS/
 ├── drivers/        # Bare-metal I/O drivers (VGA terminal, Serial COM1, Keyboard, x86 I/O)
 ├── graphics/       # Framebuffer graphics pipeline, bitmap fonts, & optional KelpDE interface
 ├── base/           # Minimal freestanding standard library functions (string.c, stddef, etc.)
-└── tests/          # Host-compiled standalone unit & module tests
+more files...
+
 ```
 
 ---
