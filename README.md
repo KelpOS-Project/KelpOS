@@ -13,7 +13,7 @@ to be lightweight and approachable, and to use its own kernel rather than the
 Linux, Windows NT, or Darwin kernels.
 
 > **Development disclosure:** KelpOS is built with AI assistance and identifies
-> this workflow as **Vibecoded OSDev (V-OSDev)**. See [AI-Policy.md](AI-Policy.md)
+> this workflow as **Vibecoded OSDev (V-OSDev)**. See [AI-POLICY.md](AI-POLICY.md)
 > for the project's review, attribution, and responsibility policy.
 
 ## Current Status
