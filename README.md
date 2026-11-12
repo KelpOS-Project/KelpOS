@@ -28,9 +28,7 @@ development system, not a feature-complete or crash-proof operating system.
 The kernel initializes a fixed 64 KiB aligned heap and a bounded-polling COM1
 serial diagnostic driver when the port is detected. The TTY shell accepts
 polled PS/2 keyboard input and can render to VGA text memory or GRUB's RGB
-framebuffer. Run `startkelpde` from the shell to open KelpDE; press `Esc` at the
-desktop to return to the shell (`T` opens the desktop terminal and `Esc` closes
-that terminal first).
+framebuffer.
 
 Shell commands include `help`, `fastfetch`, `uname`, `cpuinfo`, `about`,
 `clear`, `echo`, `mem`, `free`, `syscrash`, `startkelpde`, `version`,
