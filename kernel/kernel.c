@@ -1,10 +1,13 @@
 #include "../drivers/vga_terminal.h"
 #include "../drivers/serial.h"
+#include "../drivers/e1000.h"
+#include "../acpi/acpi.h"
 #include "../boot/multiboot.h"
 #include "../graphics/framebuffer.h"
 #include "../graphics/desktop.h"
 #include "../memory/heap.h"
 #include "panic.h"
+#include "interrupts.h"
 #include "shell.h"
 
 #include <stdbool.h>
@@ -26,6 +29,7 @@ void kernel_main(uint32_t multiboot_info_address)
         (const struct multiboot_info_v1 *)(uintptr_t)multiboot_info_address;
 
     terminal_initialize();
+    interrupts_initialize();
     serial_available = serial_initialize();
     kernel_log("KelpOS boot: kernel entry reached.\n");
 
@@ -34,6 +38,19 @@ void kernel_main(uint32_t multiboot_info_address)
 
     kernel_heap_initialize();
     kernel_log("KelpOS boot: 64 KiB bootstrap heap ready.\n");
+
+    struct acpi_root_info acpi_root;
+    if (acpi_initialize(&acpi_root)) {
+        kernel_log(acpi_root.xsdt
+            ? "KelpOS firmware: ACPI XSDT found.\n"
+            : "KelpOS firmware: ACPI RSDT found.\n");
+    } else {
+        kernel_log("KelpOS firmware: ACPI RSDP not found.\n");
+    }
+
+    kernel_log(e1000_initialize()
+        ? "KelpOS network: Intel E1000 polling driver ready.\n"
+        : "KelpOS network: supported Intel E1000 not found.\n");
 
     if (multiboot_info != NULL
             && (multiboot_info->flags & MULTIBOOT_INFO_FRAMEBUFFER) != 0
@@ -58,8 +75,12 @@ void kernel_main(uint32_t multiboot_info_address)
         : "KelpOS boot: COM1 unavailable; continuing on VGA.\n");
 
     if (framebuffer_available) {
-        kernel_log("KelpOS boot: GRUB RGB framebuffer ready. Starting KelpDE.\n");
-        desktop_run(&framebuffer);
+        terminal_use_framebuffer(&framebuffer);
+        terminal_initialize();
+        /*desktop_set_framebuffer(&framebuffer);
+        kernel_log("KelpOS boot: GRUB RGB framebuffer ready. Run startkelpde to open KelpDE.\n");
+    } else {
+        desktop_set_framebuffer(NULL);*/
     }
 
     kernel_log("KelpOS boot: VGA text console ready. Starting TTY shell.\n");

@@ -1,6 +1,7 @@
 .set ALIGN, 1 << 0
 .set MEMINFO, 1 << 1
-.set FLAGS, ALIGN | MEMINFO
+.set VIDEOINFO, 1 << 2
+.set FLAGS, ALIGN | MEMINFO | VIDEOINFO
 .set MAGIC, 0x1BADB002
 .set CHECKSUM, -(MAGIC + FLAGS)
 
@@ -9,6 +10,15 @@
 .long MAGIC
 .long FLAGS
 .long CHECKSUM
+.long 0
+.long 0
+.long 0
+.long 0
+.long 0
+.long 0
+.long 1024
+.long 768
+.long 32
 
 .section .bss
 .align 16
@@ -100,7 +110,7 @@ _start:
     jnz 1b
 
     mov %cr4, %eax
-    or $0x20, %eax
+    or $0x620, %eax
     mov %eax, %cr4
     mov $pml4_table, %eax
     mov %eax, %cr3
@@ -112,8 +122,11 @@ _start:
 
     lgdt gdt64_pointer
     mov %cr0, %eax
+    and $0xFFFFFFF3, %eax
+    or $0x2, %eax
     or $0x80000000, %eax
     mov %eax, %cr0
+    fninit
     ljmp $0x08, $long_mode_start
 
 boot_failure:

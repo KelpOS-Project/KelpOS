@@ -17,6 +17,7 @@ enum {
 static bool left_shift;
 static bool right_shift;
 static bool caps_lock;
+static enum keyboard_layout current_layout = KEYBOARD_LAYOUT_ENGLISH;
 
 static const char normal_keys[0x40] = {
     [0x02] = '1', [0x03] = '2', [0x04] = '3', [0x05] = '4',
@@ -52,6 +53,95 @@ static const char shifted_keys[0x40] = {
     [0x39] = ' ',
 };
 
+static const char french_letters[0x40] = {
+    [0x10] = 'a', [0x11] = 'z', [0x12] = 'e', [0x13] = 'r',
+    [0x14] = 't', [0x15] = 'y', [0x16] = 'u', [0x17] = 'i',
+    [0x18] = 'o', [0x19] = 'p', [0x1E] = 'q', [0x1F] = 's',
+    [0x20] = 'd', [0x21] = 'f', [0x22] = 'g', [0x23] = 'h',
+    [0x24] = 'j', [0x25] = 'k', [0x26] = 'l', [0x27] = 'm',
+    [0x28] = 'u', [0x2C] = 'w', [0x2D] = 'x', [0x2E] = 'c',
+    [0x2F] = 'v', [0x30] = 'b', [0x31] = 'n', [0x32] = ',',
+    [0x33] = ';', [0x34] = ':', [0x35] = '!',
+};
+
+static const char french_symbols[0x40] = {
+    [0x02] = '&', [0x03] = 'e', [0x04] = '"', [0x05] = '\'',
+    [0x06] = '(', [0x07] = '-', [0x08] = 'e', [0x09] = '_',
+    [0x0A] = 'c', [0x0B] = 'a', [0x0C] = ')', [0x0D] = '=',
+    [0x1A] = '^', [0x1B] = '$', [0x29] = '^',
+};
+
+static const char french_shifted_symbols[0x40] = {
+    [0x02] = '1', [0x03] = '2', [0x04] = '3', [0x05] = '4',
+    [0x06] = '5', [0x07] = '6', [0x08] = '7', [0x09] = '8',
+    [0x0A] = '9', [0x0B] = '0', [0x0C] = '_', [0x0D] = '+',
+    [0x1A] = '^', [0x1B] = '$', [0x29] = '^',
+};
+
+static const char german_letters[0x40] = {
+    [0x1A] = 'u', [0x27] = 'o', [0x28] = 'a',
+};
+
+static const char german_symbols[0x40] = {
+    [0x1B] = '+', [0x2B] = '#',
+};
+
+static const char german_shifted_symbols[0x40] = {
+    [0x02] = '!', [0x03] = '"', [0x04] = '#', [0x05] = '$',
+    [0x06] = '%', [0x07] = '&', [0x08] = '/', [0x09] = '(',
+    [0x0A] = ')', [0x0B] = '=', [0x0C] = '?', [0x0D] = '`',
+    [0x1B] = '*', [0x2B] = '\'',
+};
+
+static bool is_letter(char character);
+
+bool keyboard_set_layout(enum keyboard_layout layout)
+{
+    if (layout < KEYBOARD_LAYOUT_ENGLISH || layout > KEYBOARD_LAYOUT_FRENCH) {
+        return false;
+    }
+    current_layout = layout;
+    return true;
+}
+
+enum keyboard_layout keyboard_get_layout(void)
+{
+    return current_layout;
+}
+
+static char normal_character(unsigned char key)
+{
+    if (current_layout == KEYBOARD_LAYOUT_FRENCH && french_letters[key] != '\0') {
+        return french_letters[key];
+    }
+    if (current_layout == KEYBOARD_LAYOUT_FRENCH && french_symbols[key] != '\0') {
+        return french_symbols[key];
+    }
+    if (current_layout == KEYBOARD_LAYOUT_GERMAN) {
+        if (key == 0x15) return 'z';
+        if (key == 0x2C) return 'y';
+        if (german_letters[key] != '\0') return german_letters[key];
+        if (german_symbols[key] != '\0') return german_symbols[key];
+    }
+    return normal_keys[key];
+}
+
+static char shifted_character(unsigned char key, char normal)
+{
+    if (is_letter(normal)) {
+        return (char)(normal - 'a' + 'A');
+    }
+    if (current_layout == KEYBOARD_LAYOUT_FRENCH
+            && french_shifted_symbols[key] != '\0') {
+        return french_shifted_symbols[key];
+    }
+    if (current_layout == KEYBOARD_LAYOUT_GERMAN
+            && german_shifted_symbols[key] != '\0') {
+        return german_shifted_symbols[key];
+    }
+    return shifted_keys[key];
+}
+
 static bool is_letter(char character)
 {
     return character >= 'a' && character <= 'z';
@@ -59,14 +149,22 @@ static bool is_letter(char character)
 
 bool keyboard_read_char(char *character)
 {
-    if (character == NULL
-            || (x86_port_read8(KEYBOARD_STATUS_PORT) & KEYBOARD_OUTPUT_READY) == 0) {
+        if (character == NULL) {
+            return false;
+        }
+        const unsigned char status = x86_port_read8(KEYBOARD_STATUS_PORT);
+        if ((status & KEYBOARD_OUTPUT_READY) == 0 || (status & 0x20) != 0) {
         return false;
     }
 
     const unsigned char scan_code = x86_port_read8(KEYBOARD_DATA_PORT);
     const bool released = (scan_code & KEYBOARD_RELEASE) != 0;
     const unsigned char key = scan_code & ~KEYBOARD_RELEASE;
+
+    if (!released && key == 0x01) {
+        *character = 27;
+        return true;
+    }
 
     if (key == KEY_LEFT_SHIFT) {
         left_shift = !released;
@@ -85,15 +183,15 @@ bool keyboard_read_char(char *character)
     }
 
     const bool shift = left_shift || right_shift;
-    const char normal = normal_keys[key];
+    const char normal = normal_character(key);
     if (normal == '\0') {
         return false;
     }
 
     if (is_letter(normal)) {
-        *character = shift != caps_lock ? shifted_keys[key] : normal;
+        *character = shift != caps_lock ? shifted_character(key, normal) : normal;
     } else {
-        *character = shift ? shifted_keys[key] : normal;
+        *character = shift ? shifted_character(key, normal) : normal;
     }
     return true;
 }

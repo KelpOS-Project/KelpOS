@@ -4,7 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct graphics_framebuffer;
+
 void terminal_initialize(void);
+void terminal_use_framebuffer(struct graphics_framebuffer *framebuffer);
 void terminal_set_color(uint8_t color);
 void terminal_write(const char *data, size_t size);
 void terminal_write_string(const char *string);
