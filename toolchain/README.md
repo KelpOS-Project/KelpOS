@@ -23,6 +23,13 @@ sudo apt install build-essential bison flex texinfo gawk curl xz-utils \
 	gpg libgmp-dev libmpfr-dev libmpc-dev libisl-dev zlib1g-dev
 ```
 
+Linux, Fedora:
+
+```sh
+sudo dnf install @development-tools bison flex texinfo gawk curl xz gpg \
+	gmp-devel mpfr-devel libmpc-devel isl-devel zlib-devel
+```
+
 Linux, Arch/Artix:
 
 ```sh
@@ -85,11 +92,12 @@ make create
 - a target sysroot location reserved for KelpOS headers and libraries
 
 This is a **freestanding compiler toolchain**, not a complete hosted C/C++
-environment. It deliberately does not install a host libc into KelpOS or provide
-target `libstdc++`; KelpOS must implement its own headers/runtime before hosted
-C++ applications can be supported. The root build still uses the host compiler
-for runnable CISWN and test executables, and uses the cross compiler for the
-kernel.
+environment. The root build produces an initial freestanding `klibc` core
+archive, but it does not yet install a complete libc into the target sysroot or
+provide process, filesystem, or device I/O APIs. The toolchain also does not
+provide target `libstdc++`. The root build still uses the host compiler for
+runnable CISWN and test executables, and uses the cross compiler for the kernel
+and target `klibc` archive.
 
 The produced binaries are specific to the host OS and architecture. Re-run the
 bootstrap separately on Linux and macOS to produce a native toolchain for each.

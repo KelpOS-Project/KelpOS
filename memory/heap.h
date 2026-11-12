@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+enum { KERNEL_HEAP_CAPACITY = 64 * 1024 };
+
 void kernel_heap_initialize(void);
 void *kernel_heap_allocate(size_t size);
 bool kernel_heap_release(void *pointer);

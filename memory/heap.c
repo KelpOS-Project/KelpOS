@@ -3,15 +3,13 @@
 #include <stdint.h>
 #include <stdalign.h>
 
-#define KERNEL_HEAP_SIZE (64 * 1024)
-
 struct heap_block {
     size_t size;
     struct heap_block *next;
     bool is_free;
 };
 
-static alignas(max_align_t) unsigned char heap_storage[KERNEL_HEAP_SIZE];
+static alignas(max_align_t) unsigned char heap_storage[KERNEL_HEAP_CAPACITY];
 static struct heap_block *heap_first_block;
 static bool heap_initialized;
 
@@ -39,7 +37,7 @@ static bool align_size(size_t size, size_t *aligned_size)
 void kernel_heap_initialize(void)
 {
     heap_first_block = (struct heap_block *)heap_storage;
-    heap_first_block->size = KERNEL_HEAP_SIZE - heap_header_size();
+    heap_first_block->size = KERNEL_HEAP_CAPACITY - heap_header_size();
     heap_first_block->next = NULL;
     heap_first_block->is_free = true;
     heap_initialized = true;

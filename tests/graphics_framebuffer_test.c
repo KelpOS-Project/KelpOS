@@ -1,12 +1,49 @@
 #include "../graphics/framebuffer.h"
 #include "../graphics/font.h"
 #include "../graphics/desktop.h"
+#include "../drivers/vga_terminal.h"
 
-/* The renderer is tested without calling its never-returning keyboard loop. */
+static const char *test_keys;
+static struct ps2_mouse_state test_mouse_events[4];
+static size_t test_mouse_event_count;
+static size_t test_mouse_event_index;
+static unsigned int test_keyboard_idle_reads;
+static bool test_mouse_enabled;
+
 bool keyboard_read_char(char *character)
 {
-    (void)character;
-    return false;
+    if (test_keyboard_idle_reads != 0) {
+        test_keyboard_idle_reads--;
+        return false;
+    }
+    if (test_keys == NULL || *test_keys == '\0') {
+        return false;
+    }
+    *character = *test_keys++;
+    return true;
+}
+
+bool ps2_mouse_initialize(size_t width, size_t height)
+{
+    (void)width;
+    (void)height;
+    test_mouse_event_index = 0;
+    return test_mouse_enabled;
+}
+
+bool ps2_mouse_poll(struct ps2_mouse_state *state)
+{
+    if (!test_mouse_enabled || test_mouse_event_index >= test_mouse_event_count) {
+        return false;
+    }
+    *state = test_mouse_events[test_mouse_event_index++];
+    return true;
+}
+
+void x86_port_write8(uint16_t port, uint8_t value)
+{
+    (void)port;
+    (void)value;
 }
 
 #include <assert.h>
@@ -52,12 +89,53 @@ int main(void)
     assert(graphics_framebuffer_initialize(&framebuffer, desktop_pixels,
         640, 480, 640 * sizeof(uint32_t)));
     desktop_draw(&framebuffer, false, lines, "");
-    assert(desktop_pixels[0] == 0x102831); /* top panel */
-    assert(desktop_pixels[40 * 640 + 1] == 0x163942); /* wallpaper */
-    assert(desktop_pixels[200 * 640 + 300] == 0xE9F0EF); /* welcome window */
+    assert(desktop_pixels[0] == 0x121B29); /* top panel */
+    assert(desktop_pixels[40 * 640 + 1] == 0x202C3D); /* wallpaper */
+    assert(desktop_pixels[200 * 640 + 300] == 0x202C3D); /* empty desktop */
     desktop_draw(&framebuffer, true, lines, "help");
-    assert(desktop_pixels[200 * 640 + 300] == 0x102831); /* terminal */
+    assert(desktop_pixels[200 * 640 + 300] == 0x101923); /* terminal */
+    const struct ps2_mouse_state mouse = { .x = 100, .y = 100, .buttons = 0 };
+    desktop_draw_pointer(&framebuffer, false, lines, "", &mouse);
+    assert(desktop_pixels[100 * 640 + 100] == 0x101820);
+    assert(desktop_pixels[103 * 640 + 103] == 0xFFFFFF);
 
+    terminal_use_framebuffer(&framebuffer);
+    terminal_initialize();
+    terminal_write_string("A");
+    assert(desktop_pixels[1] == 0xAAAAAA);
+    terminal_clear();
+    assert(desktop_pixels[1] == 0x000000);
+
+    desktop_set_framebuffer(&framebuffer);
+    test_mouse_events[0] = (struct ps2_mouse_state) {
+        .x = 210, .y = 440, .buttons = 1,
+    };
+    test_mouse_events[1] = (struct ps2_mouse_state) {
+        .x = 210, .y = 440, .buttons = 0,
+    };
+    test_mouse_events[2] = (struct ps2_mouse_state) {
+        .x = 595, .y = 67, .buttons = 1,
+    };
+    test_mouse_events[3] = (struct ps2_mouse_state) {
+        .x = 595, .y = 67, .buttons = 0,
+    };
+    test_mouse_event_count = 4;
+    test_keyboard_idle_reads = 3;
+    test_keys = "\x1b";
+    assert(desktop_start());
+    assert(*test_keys == '\0');
+    test_keys = NULL;
+    test_mouse_enabled = false;
+    test_mouse_event_count = 0;
+    test_keyboard_idle_reads = 0;
+    test_keys = "\x1b";
+    assert(desktop_start());
+    test_keyboard_idle_reads = 1;
+    assert(*test_keys == '\0');
+    test_keys = NULL;
+    terminal_use_framebuffer(NULL);
+
+    test_mouse_enabled = false;
     puts("graphics framebuffer/font/desktop tests passed");
     return 0;
 }
