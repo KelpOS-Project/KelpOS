@@ -26,6 +26,17 @@ long labs(long x)
     return x < 0 ? -x : x;
 }
 
+/* bump allocator cannot grow in place and cannot know the old size:
+ * realloc allocates a fresh block WITHOUT copying (documented limit;
+ * callers that need the old content copy it themselves). */
+void *realloc(void *p, size_t n)
+{
+    if (!p)
+        return malloc(n);
+    (void)p;
+    return kmalloc(n);
+}
+
 int atoi(const char *s)
 {
     int r = 0, neg = 0;

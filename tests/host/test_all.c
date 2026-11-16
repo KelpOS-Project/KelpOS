@@ -158,6 +158,8 @@ static void test_heap_strdup(void)
     free(s);
 }
 
+int test_fs_main(void); /* tests/host/test_fs.c */
+
 int main(void)
 {
     test_string();
@@ -166,6 +168,7 @@ int main(void)
     test_stdlib_heap();
     test_stdlib_more();
     test_heap_strdup();
+    test_fs_main();
     kputs("ALL TESTS PASSED");
     return 0;
 }

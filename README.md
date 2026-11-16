@@ -1,11 +1,19 @@
-# KelpOS — FOSS Unix-like x86_64 Kernel (v0.2.0)
+# KelpOS — FOSS Unix-like x86_64 Kernel (v0.3.0)
 
 > **Made with AI** — KelpOS is developed with the help of AI coding agents. See [AI-POLICY.md](AI-POLICY.md) for how AI assistance is used and reviewed.
 
 KelpOS is a free (GPL-3.0), Unix-like hobby kernel for **x86_64**,
 written in **C17** with an optional **Rust** component (`rust/krust`).
-It boots via the **Limine Boot Protocol**; the first milestone
-("base kernel + shell") is complete.
+It boots via the **Limine Boot Protocol**.
+
+**v0.3.0 highlights:** graphical desktop (Terminal / Files / Browser /
+About), a filesystem stack (`fs/vfs` mount layer, read-only
+**FAT12/16/32 + exFAT** driver, `ext4`/`btrfs` superblock probe
+skeletons), Unix file commands (`ls pwd cd mkdir tree cat`), users &
+groups (`adduser groupmod whoami id doas sudo`), a real-disk test
+volume mounted at `/media/disk0` (`mounts diskls diskcat`), a
+`fastfetch`-style system info, boot menu wallpaper and a second
+"Silent Boot" boot entry, plus the `kelpinstall` ncurses installer.
 
 ## Project structure
 
@@ -14,33 +22,55 @@ KelpOS-main/
 ├── Makefile              Build system (kernel, iso, run, test, rust, packages)
 ├── include/              Global headers (io.h, version.h; limine.h is fetched)
 ├── boot/
-│   └── limine.conf       Bootloader configuration
-├── kernel/               Kernel core
-│   ├── boot.S            Entry (_start), GDT reload, ISR stubs (NASM)
-│   ├── kernel.c          kmain, Limine requests, heap setup
-│   ├── console.c/h       Early console (serial) + framebuffer splash
-│   ├── font.c            Embedded 8x16 bitmap font (generated)
-│   ├── gdt.c/h           64-bit GDT
-│   ├── idt.c/h           IDT + exception/IRQ dispatcher
-│   ├── pic.c/h           8259 PIC (remap, EOI)
-│   ├── timer.c/h         PIT ticker (100 Hz)
-│   ├── shell.c/h         Interactive shell
-│   ├── panic.c/h         Kernel panic
-│   └── bin/              Built-in commands (help, echo, uptime, mem, ...)
-│       └── pkg.c         Package manager command
+│   ├── limine.conf         Bootloader config (wallpaper, KelpOS + Silent Boot)
+│   ├── wallpaper.bmp       Boot menu background (scripts/genwallpaper.py)
+│   ├── silent.flag         Module flag: Silent Boot entry boots to desktop
+│   └── disk.img            FAT16 demo disk, mounted at /media/disk0
+│                           (scripts/gendiskimg.sh)
+├── kernel/                 Kernel core
+│   ├── boot.S              Entry (_start), GDT reload, ISR stubs (NASM)
+│   ├── kernel.c            kmain, Limine requests, heap, fs wiring
+│   ├── console.c/h         Serial + framebuffer color-cell text terminal
+│   ├── desktop.c/h         Graphical desktop (keyboard-driven)
+│   ├── shell.c/h           Interactive shell (with cwd)
+│   ├── users.c/h           User/group database (mirrored to /etc)
+│   ├── font.c              Embedded 8x16 bitmap font (generated)
+│   ├── gdt.c/h             64-bit GDT
+│   ├── idt.c/h             IDT + exception/IRQ dispatcher
+│   ├── pic.c/h             8259 PIC (remap, EOI)
+│   ├── timer.c/h           PIT ticker (100 Hz)
+│   ├── panic.c/h           Kernel panic
+│   └── bin/                Built-in commands (help, echo, uptime, ...)
+│       ├── fs.c            "fs" package table (ls pwd cd mkdir tree cat)
+│       ├── adduser.c       "users" package (adduser groupmod whoami id doas)
+│       ├── fastfetch.c     "fastfetch" package
+│       ├── mounts.c        "diskfs" package (mounts diskls diskcat)
+│       └── pkg.c           Package manager command
 ├── drivers/
-│   ├── serial.c/h        16550 UART (COM1)
-│   └── keyboard.c/h      PS/2 keyboard (IRQ1)
+│   ├── serial.c/h          16550 UART (COM1)
+│   └── keyboard.c/h        PS/2 keyboard (IRQ1, arrows/Esc)
 ├── memory/
-│   └── heap.c/h          Bump allocator (preparation for PMM/VMM)
-├── klibc/                Small custom libc (string, ctype, printf, stdlib, errno)
-├── fs/                   Filesystem (planned)
-├── tests/host/           Native unit tests (klibc/heap, no QEMU needed)
-├── rust/krust/           Optional no_std Rust component (CRC32)
-├── toolchain/            Cross-compiler notes
-├── scripts/setup-limine.sh   Downloads Limine + limine.h
-├── docs/ROADMAP.md       Roadmap
-└── README.md             This file
+│   └── heap.c/h            Bump allocator (preparation for PMM/VMM)
+├── fs/                     Filesystem stack
+│   ├── block.c/h           Block device registry (512-byte sectors)
+│   ├── ramdisk.c/h         Memory-backed block device (from boot module)
+│   ├── vfs.c/h             Mount layer + backend ops
+│   ├── fat.c/h             FAT12/16/32 + exFAT (read-only)
+│   ├── ext4.c/h            ext4 superblock probe (RO skeleton)
+│   ├── btrfs.c/h           btrfs superblock probe (RO skeleton)
+│   └── ramfs.c/h           Tiny in-memory filesystem (shell cwd, /etc)
+├── klibc/                  Small custom libc (string, ctype, printf, stdlib, errno)
+├── tests/host/             Native unit tests (klibc/heap/fs, no QEMU needed)
+├── rust/krust/             Optional no_std Rust component (CRC32)
+├── toolchain/              Cross-compiler notes
+├── scripts/
+│   ├── setup-limine.sh     Downloads Limine + limine.h
+│   ├── genwallpaper.py     Generates the boot menu wallpaper
+│   ├── gendiskimg.sh       Generates the FAT16 demo disk image
+│   ├── pkgconf.py          Package selection (PKGS=...) for the build
+│   └── kelpinstall         ncurses installer (dry-run default)
+├── docs/ROADMAP.md         Roadmap
+└── README.md               This file
 ```
 
 The framebuffer text terminal is drawn with an embedded 8x16 font
@@ -51,8 +81,9 @@ on serial.
 ## Packages
 
 Shell commands are grouped into **packages**. The `core` package is
-always present; the optional packages are `about`, `mem`, `crc`,
-`cowsay`, and `fortune`.
+always present; the optional packages are `fs`, `users`, `fastfetch`,
+`diskfs`, `about`, `mem`, `crc`, `cowsay`, `fortune`, and `crash`
+(a debug command that forces a kernel panic).
 
 - **Build-time selection** — pass a package list to make:
   ```sh
@@ -84,12 +115,37 @@ make run      # build the ISO and boot it in QEMU
 Console output runs over `serial stdio`. In addition, the framebuffer
 terminal shows the shell text directly in the QEMU window (8x16 font).
 Shell commands: `help`, `echo`, `uptime`, `mem`, `crc`, `about`,
-`cowsay`, `fortune`, `pkg`, `clear`, `reboot`, `shutdown`.
+`cowsay`, `fortune`, `pkg`, `clear`, `reboot`, `shutdown`, `desktop`
+(graphical desktop), plus the packages `fs` (`ls pwd cd mkdir tree
+cat`), `users` (`adduser groupmod whoami id doas sudo`), `fastfetch`
+and `diskfs` (`mounts diskls diskcat` — the FAT16 demo disk shipped as
+a boot module is mounted at `/media/disk0`; ext4/btrfs volumes are
+detected but read access lands with the M5 milestone).
+
+### Boot entries
+
+The Limine menu (with wallpaper) offers:
+
+- **KelpOS** — normal boot: banner + shell
+- **KelpOS (Silent Boot)** — no banner, straight into the desktop
+
+## Installer
+
+`scripts/kelpinstall` is an ncurses TUI that picks the **Device of
+Choice** and the packages to build into the kernel, then partitions
+the disk (MBR, FAT32 at LBA 63), copies the payload and installs the
+Limine BIOS stage. **Dry run is the default** — pass `--real` (and
+confirm by typing the device name) to actually write:
+
+```sh
+sudo scripts/kelpinstall --real /dev/sdX          # TUI, real install
+scripts/kelpinstall --non-interactive /dev/sdX --packages ALL   # dry run
+```
 
 ## Tests
 
 ```sh
-make test        # native unit tests (klibc, heap)
+make test        # native unit tests (klibc, heap, ramfs/vfs/FAT)
 make test-qemu   # boot smoke test in QEMU (waits for KELPOS_SMOKE_OK)
 ```
 

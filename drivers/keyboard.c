@@ -5,6 +5,7 @@
 #include "keyboard.h"
 
 static const char kmap_lower[128] = {
+    [0x01] = KBD_ESC,
     [0x02] = '1', [0x03] = '2', [0x04] = '3', [0x05] = '4', [0x06] = '5',
     [0x07] = '6', [0x08] = '7', [0x09] = '8', [0x0A] = '9', [0x0B] = '0',
     [0x0C] = '-', [0x0D] = '=', [0x0E] = '\b', [0x0F] = '\t',
@@ -38,6 +39,7 @@ static const char kmap_upper[128] = {
 static volatile char queue[QSIZE];
 static volatile int head, tail;
 static bool shift;
+static bool ext; /* last scancode was the 0xE0 extended prefix */
 
 void keyboard_init(void)
 {
@@ -72,16 +74,35 @@ void keyboard_isr(void)
 {
     uint8_t sc = inb(0x60);
 
+    if (sc == 0xE0) { /* extended key prefix: arrows, nav keys ... */
+        ext = true;
+        return;
+    }
+
     if (sc & 0x80) { /* key release */
         uint8_t k = sc & 0x7F;
         if (k == 0x2A || k == 0x36)
             shift = false;
+        ext = false;
         return;
     }
 
     if (sc == 0x2A || sc == 0x36) { /* shift pressed */
         shift = true;
         return;
+    }
+
+    if (ext) {
+        ext = false;
+        switch (sc) {
+        case 0x48: push(KBD_UP);    return;
+        case 0x50: push(KBD_DOWN);  return;
+        case 0x4B: push(KBD_LEFT);  return;
+        case 0x4D: push(KBD_RIGHT); return;
+        case 0x47: push(KBD_HOME);  return;
+        case 0x4F: push(KBD_END);   return;
+        default:   return;          /* ignore other extended keys */
+        }
     }
 
     char c = shift ? kmap_upper[sc] : kmap_lower[sc];

@@ -4,9 +4,33 @@
 #include <stdio.h>
 #include "shell.h"
 #include "keyboard.h"
+#include "console.h"
+#include "ramfs.h"
 #include "bin/commands.h"
 
 #define LINE_MAX 256
+
+/* shell working directory (fs package provides cd/ls on top of it) */
+static char cwd[96] = "/";
+
+const char *shell_cwd(void)
+{
+    return cwd;
+}
+
+int shell_chdir(const char *path)
+{
+    if (!path || !*path)
+        return -1;
+    struct ramfs_node *n = ramfs_resolve_at(ramfs_root(), path);
+    if (!n || !ramfs_is_dir(n))
+        return -1;
+    char newcwd[96];
+    if (!ramfs_path_of(n, newcwd, sizeof(newcwd)))
+        return -1;
+    strcpy(cwd, newcwd);
+    return 0;
+}
 
 static void exec_line(char *line)
 {
@@ -56,7 +80,10 @@ void shell_run(void)
     char buf[LINE_MAX];
 
     for (;;) {
-        kprintf("kelp> ");
+        console_set_colors(0x3fa34du, KELP_BG); /* green prompt */
+        kprintf("kelp");
+        console_set_colors(KELP_FG, KELP_BG);
+        kprintf("%s~$ ", cwd);
 
         int n = 0;
         for (;;) {

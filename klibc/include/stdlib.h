@@ -5,6 +5,7 @@
 
 void *malloc(size_t n);   /* -> memory/heap.c (kmalloc) */
 void  free(void *p);
+void *realloc(void *p, size_t n);
 int   abs(int x);
 long  labs(long x);
 int   atoi(const char *s);

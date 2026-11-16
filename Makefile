@@ -2,7 +2,7 @@
 #  KelpOS — FOSS Unix-like x86_64 kernel (Limine)
 # ─────────────────────────────────────────────────────────────
 
-VERSION := 0.2.0
+VERSION := 0.3.0
 BUILD   := build
 OBJDIR  := $(BUILD)/obj
 
@@ -32,10 +32,10 @@ PKGS ?= all
 KCFLAGS := -std=c17 -ffreestanding -fno-builtin -fno-stack-protector \
            -fno-pic -fno-pie -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
            -mcmodel=kernel -O2 -g -Wall -Wextra \
-           -Iinclude -Iklibc/include -Ikernel -Imemory -Idrivers -I$(BUILD)
+           -Iinclude -Iklibc/include -Ikernel -Imemory -Idrivers -Ifs -I$(BUILD)
 
 KSRC := $(wildcard kernel/*.c) $(wildcard kernel/bin/*.c) \
-        $(wildcard drivers/*.c) $(wildcard memory/*.c) \
+        $(wildcard drivers/*.c) $(wildcard memory/*.c) $(wildcard fs/*.c) \
         $(wildcard klibc/src/*.c)
 KOBJ := $(OBJDIR)/kernel/boot.o $(patsubst %.c,$(OBJDIR)/%.o,$(KSRC))
 
@@ -87,10 +87,14 @@ font:
 
 iso: $(BUILD)/kelpos.iso
 
-$(BUILD)/kelpos.iso: $(BUILD)/kelpos.elf boot/limine.conf $(BUILD)/limine/limine
+$(BUILD)/kelpos.iso: $(BUILD)/kelpos.elf boot/limine.conf boot/wallpaper.bmp \
+		boot/silent.flag boot/disk.img $(BUILD)/limine/limine
 	@mkdir -p $(BUILD)/iso/boot
 	cp $(BUILD)/kelpos.elf $(BUILD)/iso/boot/
 	cp boot/limine.conf $(BUILD)/iso/boot/
+	cp boot/wallpaper.bmp $(BUILD)/iso/
+	cp boot/silent.flag $(BUILD)/iso/boot/
+	cp boot/disk.img $(BUILD)/iso/boot/
 	cp $(BUILD)/limine/limine-bios.sys $(BUILD)/limine/limine-bios-cd.bin \
 		$(BUILD)/limine/limine-uefi-cd.bin $(BUILD)/iso/
 	# Omit --protective-msdos-label: xorriso 1.5.8 would write an MBR
@@ -116,8 +120,9 @@ run-debug: iso
 test: $(BUILD)/test_all
 	./$(BUILD)/test_all
 
-$(BUILD)/test_all: $(wildcard tests/host/*.c) $(wildcard klibc/src/*.c) $(wildcard memory/*.c)
-	$(HOSTCC) -fno-builtin -Iinclude -Iklibc/include -Imemory -o $@ $^
+$(BUILD)/test_all: $(wildcard tests/host/*.c) $(wildcard klibc/src/*.c) \
+                   $(wildcard memory/*.c) $(wildcard fs/*.c)
+	$(HOSTCC) -fno-builtin -Iinclude -Iklibc/include -Imemory -Ifs -o $@ $^
 
 test-qemu: iso
 	@rm -f $(BUILD)/smoke.log

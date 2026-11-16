@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "panic.h"
 #include "console.h"
+#include "bin/commands.h"
 
 void panicf(const char *fmt, ...)
 {

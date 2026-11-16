@@ -1,9 +1,10 @@
 /* kernel/console.c — Early console: serial COM1 + framebuffer text terminal.
  *
- * The framebuffer terminal draws glyphs from the embedded 8x16 bitmap font
- * (kernel/font.c) and supports scrolling, cursor rendering, backspace and
- * tab. Output is always mirrored to the serial port so boot logs remain
- * capturable with -serial stdio / file:... */
+ * The framebuffer terminal is a color cell grid (8x16 cells, glyphs from
+ * the embedded bitmap font kernel/font.c). It supports scrolling, cursor
+ * rendering, backspace and tab, and exposes a small draw API that the
+ * desktop and GUI apps build on. Output is always mirrored to the serial
+ * port so boot logs remain capturable with -serial stdio / file:... */
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
@@ -25,8 +26,8 @@ void console_init(void)
 
 #define CELL_W 8
 #define CELL_H 16
-#define FG_COLOR 0xd8d8d8u
-#define BG_COLOR 0x10141au
+#define TERM_MAX_COLS 160
+#define TERM_MAX_ROWS 100
 
 static struct {
     volatile uint32_t *px;
@@ -34,14 +35,22 @@ static struct {
     uint64_t width, height;
     unsigned cols, rows;
     unsigned col, row;
-    char text[160 * 100]; /* screen content for cursor restore + scroll */
+    char text[TERM_MAX_COLS * TERM_MAX_ROWS];
+    uint32_t fg[TERM_MAX_COLS * TERM_MAX_ROWS];
+    uint32_t bg[TERM_MAX_COLS * TERM_MAX_ROWS];
     bool active;
 } fb;
 
-static void fb_draw_char(unsigned col, unsigned row, char ch, bool cursor)
+static uint32_t cur_fg = KELP_FG;
+static uint32_t cur_bg = KELP_BG;
+
+unsigned console_cols(void) { return fb.active ? fb.cols : 0; }
+unsigned console_rows(void) { return fb.active ? fb.rows : 0; }
+bool console_fb_active(void) { return fb.active; }
+
+static void fb_draw_glyph(unsigned col, unsigned row, char ch,
+                          uint32_t fgc, uint32_t bgc, bool cursor)
 {
-    if (!fb.active)
-        return;
     const uint8_t *g = font8x16[(uint8_t)ch];
     uint32_t x0 = col * CELL_W, y0 = row * CELL_H;
     for (unsigned r = 0; r < CELL_H; r++) {
@@ -49,7 +58,7 @@ static void fb_draw_char(unsigned col, unsigned row, char ch, bool cursor)
         uint8_t bits = g[r];
         for (unsigned c = 0; c < CELL_W; c++) {
             bool on = (bits & (0x80u >> c)) != 0;
-            uint32_t colr = on ? FG_COLOR : BG_COLOR;
+            uint32_t colr = on ? fgc : bgc;
             if (cursor && r >= CELL_H - 2)
                 colr = ~colr | 0xff000000u; /* underline cursor */
             line[c] = colr;
@@ -57,36 +66,85 @@ static void fb_draw_char(unsigned col, unsigned row, char ch, bool cursor)
     }
 }
 
-static void fb_clear_row(unsigned row)
+/* repaint cell (col,row) from the cell buffers */
+static void fb_paint(unsigned col, unsigned row, bool cursor)
+{
+    unsigned idx = row * fb.cols + col;
+    fb_draw_glyph(col, row, fb.text[idx], fb.fg[idx], fb.bg[idx], cursor);
+}
+
+static void fb_set_cell(unsigned col, unsigned row, char ch,
+                        uint32_t fgc, uint32_t bgc)
+{
+    unsigned idx = row * fb.cols + col;
+    fb.text[idx] = ch;
+    fb.fg[idx] = fgc;
+    fb.bg[idx] = bgc;
+    fb_draw_glyph(col, row, ch, fgc, bgc, false);
+}
+
+void console_draw_cell(unsigned col, unsigned row, char ch,
+                       uint32_t fgc, uint32_t bgc)
+{
+    if (!fb.active || col >= fb.cols || row >= fb.rows)
+        return;
+    fb_set_cell(col, row, ch, fgc, bgc);
+}
+
+void console_fill(unsigned col0, unsigned row0, unsigned col1, unsigned row1,
+                  uint32_t bgc)
 {
     if (!fb.active)
         return;
-    for (unsigned c = 0; c < fb.cols; c++) {
-        fb.text[row * fb.cols + c] = 0;
-        fb_draw_char(c, row, ' ', false);
-    }
+    if (col1 >= fb.cols)
+        col1 = fb.cols - 1;
+    if (row1 >= fb.rows)
+        row1 = fb.rows - 1;
+    for (unsigned r = row0; r <= row1 && r < fb.rows; r++)
+        for (unsigned c = col0; c <= col1 && c < fb.cols; c++)
+            fb_set_cell(c, r, ' ', bgc, bgc);
+}
+
+void console_set_colors(uint32_t fgc, uint32_t bgc)
+{
+    cur_fg = fgc;
+    cur_bg = bgc;
 }
 
 static void fb_scroll(void)
 {
     if (!fb.active)
         return;
-    /* text buffer */
+
+    /* shift cell buffers up by one row */
     for (unsigned r = 1; r < fb.rows; r++)
-        for (unsigned c = 0; c < fb.cols; c++)
-            fb.text[(r - 1) * fb.cols + c] = fb.text[r * fb.cols + c];
-    for (unsigned c = 0; c < fb.cols; c++)
-        fb.text[(fb.rows - 1) * fb.cols + c] = 0;
+        for (unsigned c = 0; c < fb.cols; c++) {
+            unsigned to = (r - 1) * fb.cols + c;
+            unsigned from = r * fb.cols + c;
+            fb.text[to] = fb.text[from];
+            fb.fg[to] = fb.fg[from];
+            fb.bg[to] = fb.bg[from];
+        }
+    for (unsigned c = 0; c < fb.cols; c++) {
+        unsigned idx = (fb.rows - 1) * fb.cols + c;
+        fb.text[idx] = 0;
+        fb.fg[idx] = cur_fg;
+        fb.bg[idx] = cur_bg;
+    }
+
     /* pixels: shift everything up by one cell row */
     for (uint64_t y = 0; y < fb.height - CELL_H; y++)
         for (uint64_t x = 0; x < fb.width; x++)
             fb.px[y * fb.stride + x] = fb.px[(y + CELL_H) * fb.stride + x];
     for (uint64_t y = fb.height - CELL_H; y < fb.height; y++)
         for (uint64_t x = 0; x < fb.width; x++)
-            fb.px[y * fb.stride + x] = BG_COLOR;
-    /* repaint the (r-1)-th row: it lost its pixel content */
+            fb.px[y * fb.stride + x] = cur_bg;
+
+    /* last visible row lost its pixels — repaint from the cell buffers */
     for (unsigned c = 0; c < fb.cols; c++)
-        fb_draw_char(c, fb.rows - 1, fb.text[(fb.rows - 1) * fb.cols + c], false);
+        fb_draw_glyph(c, fb.rows - 1, fb.text[(fb.rows - 1) * fb.cols + c],
+                      fb.fg[(fb.rows - 1) * fb.cols + c],
+                      fb.bg[(fb.rows - 1) * fb.cols + c], false);
 }
 
 static void fb_putc(char c)
@@ -95,7 +153,7 @@ static void fb_putc(char c)
         return;
 
     /* remove cursor from current cell before moving */
-    fb_draw_char(fb.col, fb.row, fb.text[fb.row * fb.cols + fb.col], false);
+    fb_paint(fb.col, fb.row, false);
 
     switch (c) {
     case '\n':
@@ -108,8 +166,7 @@ static void fb_putc(char c)
     case '\b':
         if (fb.col > 0) {
             fb.col--;
-            fb.text[fb.row * fb.cols + fb.col] = 0;
-            fb_draw_char(fb.col, fb.row, ' ', false);
+            fb_set_cell(fb.col, fb.row, ' ', cur_fg, cur_bg);
         }
         break;
     case '\t':
@@ -128,8 +185,7 @@ static void fb_putc(char c)
             fb_scroll();
             fb.row = fb.rows - 1;
         }
-        fb.text[fb.row * fb.cols + fb.col] = c;
-        fb_draw_char(fb.col, fb.row, c, false);
+        fb_set_cell(fb.col, fb.row, c, cur_fg, cur_bg);
         fb.col++;
         break;
     }
@@ -138,7 +194,7 @@ static void fb_putc(char c)
         fb_scroll();
         fb.row = fb.rows - 1;
     }
-    fb_draw_char(fb.col, fb.row, fb.text[fb.row * fb.cols + fb.col], true);
+    fb_paint(fb.col, fb.row, true);
 }
 
 void console_fb_init(struct limine_framebuffer *f)
@@ -156,8 +212,12 @@ void console_fb_init(struct limine_framebuffer *f)
     fb.active = true;
 
     for (unsigned r = 0; r < fb.rows; r++)
-        for (unsigned c = 0; c < fb.cols; c++)
-            fb.text[r * fb.cols + c] = 0;
+        for (unsigned c = 0; c < fb.cols; c++) {
+            unsigned idx = r * fb.cols + c;
+            fb.text[idx] = 0;
+            fb.fg[idx] = cur_fg;
+            fb.bg[idx] = cur_bg;
+        }
 }
 
 void console_clear(void)
@@ -165,11 +225,16 @@ void console_clear(void)
     if (fb.active) {
         for (uint64_t y = 0; y < fb.height; y++)
             for (uint64_t x = 0; x < fb.width; x++)
-                fb.px[y * fb.stride + x] = BG_COLOR;
+                fb.px[y * fb.stride + x] = cur_bg;
         for (unsigned r = 0; r < fb.rows; r++)
-            fb_clear_row(r);
+            for (unsigned c = 0; c < fb.cols; c++) {
+                unsigned idx = r * fb.cols + c;
+                fb.text[idx] = 0;
+                fb.fg[idx] = cur_fg;
+                fb.bg[idx] = cur_bg;
+            }
         fb.col = fb.row = 0;
-        fb_draw_char(0, 0, 0, true);
+        fb_paint(0, 0, true);
     }
 }
 

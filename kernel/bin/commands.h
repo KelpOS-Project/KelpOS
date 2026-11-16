@@ -39,5 +39,7 @@ int cmd_uptime(int argc, char **argv);
 int cmd_pkg(int argc, char **argv);
 int cmd_reboot(int argc, char **argv);
 int cmd_shutdown(int argc, char **argv);
+int cmd_desktop(int argc, char **argv); /* kernel/desktop.c */
+int cmd_crash(int argc, char **argv);   /* kernel/bin/crash.c */
 
 #endif

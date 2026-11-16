@@ -18,6 +18,7 @@ static const struct builtin core_cmds[] = {
     { "pkg",      cmd_pkg,      "package manager (list/info/enable/disable)" },
     { "reboot",   cmd_reboot,   "reboot the machine" },
     { "shutdown", cmd_shutdown, "QEMU shutdown (halt on real hardware)" },
+    { "desktop",  cmd_desktop,  "switch to the graphical desktop" },
 };
 
 /* ── optional packages ──────────────────────────────────────────────── */
@@ -57,8 +58,48 @@ extern const struct builtin fortune_cmds[];
 #define FORTUNE_TABLE 0, 0, false
 #endif
 
+#ifdef KELPOS_PKG_FS
+extern const struct builtin fs_cmds_all[]; /* kernel/bin/fs.c */
+#define FS_TABLE fs_cmds_all, 6, true
+#else
+#define FS_TABLE 0, 0, false
+#endif
+
+#ifdef KELPOS_PKG_USERS
+extern const struct builtin users_cmds[];
+#define USERS_TABLE users_cmds, 6, true
+#else
+#define USERS_TABLE 0, 0, false
+#endif
+
+#ifdef KELPOS_PKG_FASTFETCH
+extern const struct builtin fastfetch_cmds[];
+#define FASTFETCH_TABLE fastfetch_cmds, 1, true
+#else
+#define FASTFETCH_TABLE 0, 0, false
+#endif
+
+#ifdef KELPOS_PKG_DISKFS
+extern const struct builtin diskfs_cmds[];
+#define DISKFS_TABLE diskfs_cmds, 3, true
+#else
+#define DISKFS_TABLE 0, 0, false
+#endif
+
+#ifdef KELPOS_PKG_CRASH
+extern const struct builtin crash_cmds[];
+#define CRASH_TABLE crash_cmds, 1, true
+#else
+#define CRASH_TABLE 0, 0, false
+#endif
+
 struct package packages[] = {
     { "core",     "essential commands (always present)", core_cmds, sizeof(core_cmds) / sizeof(core_cmds[0]), true, true },
+    { "fs",       "file tools: ls pwd cd mkdir tree cat", FS_TABLE,       true },
+    { "users",    "users & groups: adduser, doas, id",   USERS_TABLE,    true },
+    { "fastfetch","system info with kelp art",           FASTFETCH_TABLE, true },
+    { "diskfs",   "real-disk fs: mounts diskls diskcat", DISKFS_TABLE,   true },
+    { "crash",    "(debug) force a kernel panic",        CRASH_TABLE,    true },
     { "about",    "information about KelpOS",            ABOUT_TABLE,    true },
     { "mem",      "heap usage statistics",               MEM_TABLE,      true },
     { "crc",      "CRC32 checksum demo (C/Rust)",        CRC_TABLE,      true },

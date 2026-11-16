@@ -12,7 +12,7 @@ Accepted words:
 """
 import sys
 
-ALL = ["about", "mem", "crc", "cowsay", "fortune"]
+ALL = ["fs", "users", "fastfetch", "diskfs", "about", "mem", "crc", "cowsay", "fortune", "crash"]
 
 arg = sys.argv[1] if len(sys.argv) > 1 else "all"
 words = arg.split() or ["all"]
