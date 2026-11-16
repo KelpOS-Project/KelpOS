@@ -66,7 +66,8 @@ static void exec_line(char *line)
             continue;
         for (size_t c = 0; c < pkg->cmd_count; c++) {
             if (strcmp(argv[0], pkg->cmds[c].name) == 0) {
-                kprintf("'%s' is disabled (package '%s') — run 'pkg enable %s'.\n",
+                kprintf("'%s' is not installed (package '%s') — run "
+                        "'kpm install %s'.\n",
                         argv[0], pkg->name, pkg->name);
                 return;
             }

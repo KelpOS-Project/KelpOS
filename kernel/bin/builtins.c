@@ -15,7 +15,10 @@ static const struct builtin core_cmds[] = {
     { "echo",     cmd_echo,     "print arguments" },
     { "clear",    cmd_clear,    "clear the screen" },
     { "uptime",   cmd_uptime,   "time since boot" },
-    { "pkg",      cmd_pkg,      "package manager (list/info/enable/disable)" },
+    { "kpm",      cmd_kpm,      "package manager (list/install/uninstall)" },
+    { "uname",    cmd_uname,    "print system information (-a for all)" },
+    { "date",     cmd_date,     "wall-clock date and time (CMOS RTC)" },
+    { "env",      cmd_env,      "print shell environment variables" },
     { "reboot",   cmd_reboot,   "reboot the machine" },
     { "shutdown", cmd_shutdown, "QEMU shutdown (halt on real hardware)" },
     { "desktop",  cmd_desktop,  "switch to the graphical desktop" },
@@ -60,7 +63,7 @@ extern const struct builtin fortune_cmds[];
 
 #ifdef KELPOS_PKG_FS
 extern const struct builtin fs_cmds_all[]; /* kernel/bin/fs.c */
-#define FS_TABLE fs_cmds_all, 6, true
+#define FS_TABLE fs_cmds_all, 12, true
 #else
 #define FS_TABLE 0, 0, false
 #endif
@@ -95,7 +98,7 @@ extern const struct builtin crash_cmds[];
 
 struct package packages[] = {
     { "core",     "essential commands (always present)", core_cmds, sizeof(core_cmds) / sizeof(core_cmds[0]), true, true },
-    { "fs",       "file tools: ls pwd cd mkdir tree cat", FS_TABLE,       true },
+    { "fs",       "file tools: ls pwd cd mkdir tree cat ...", FS_TABLE,       true },
     { "users",    "users & groups: adduser, doas, id",   USERS_TABLE,    true },
     { "fastfetch","system info with kelp art",           FASTFETCH_TABLE, true },
     { "diskfs",   "real-disk fs: mounts diskls diskcat", DISKFS_TABLE,   true },

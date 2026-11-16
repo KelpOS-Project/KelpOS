@@ -70,6 +70,15 @@ int kbd_getchar(void)
     }
 }
 
+int kbd_poll(void)
+{
+    if (tail == head)
+        return -1; /* nothing queued */
+    int c = queue[tail];
+    tail = (tail + 1) % QSIZE;
+    return c;
+}
+
 void keyboard_isr(void)
 {
     uint8_t sc = inb(0x60);

@@ -13,5 +13,6 @@
 void keyboard_init(void);
 void keyboard_isr(void);
 int  kbd_getchar(void);
+int  kbd_poll(void); /* -1 when the queue is empty (non-blocking) */
 
 #endif

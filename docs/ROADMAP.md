@@ -8,7 +8,7 @@
 - [x] PS/2 keyboard, shell with builtins, packages (pkg command)
 - [x] Bump heap, klibc, host tests, QEMU smoke test
 
-## M2 — Users, files & desktop ✅ (current, v0.3.0)
+## M2 — Users, files & desktop ✅ (v0.3.0)
 - [x] RAM-fs (ramfs): dirs/files, shell cwd, /etc/passwd & /etc/group
 - [x] Users & groups: adduser, groupmod, whoami, id, doas/sudo (password gate)
 - [x] Unix file commands: ls, pwd, cd, mkdir, tree, cat
@@ -18,8 +18,16 @@
 - [x] Graphical desktop: Terminal (into the shell), Files (ramfs browser),
       Browser (honest placeholder until the network stack), About, Reboot/Shutdown
 - [x] Boot menu: wallpaper, interface branding, KelpOS + KelpOS (Silent Boot)
-- [x] kelpinstall: ncurses installer (device of choice + package selection,
-      dry-run default, sfdisk/mkfs.vfat/limine bios-install)
+
+## M2.5 — Real desktop & installer ✅ (current, v0.4.0)
+- [x] PS/2 mouse driver (IRQ12, stream mode, polled API)
+- [x] Mouse-driven window manager: overlapping windows, title bars,
+      drag & drop focus, close box, start menu, taskbar with RTC clock
+- [x] kpm package manager: install/uninstall, /etc/kpm/installed DB
+- [x] More Unix commands: rm, touch, wc, head, tail, grep, uname, date (RTC), env
+- [x] kelpinstall in C: real install by default, ANSI TUI,
+      device + package selection, sfdisk/mkfs.vfat/limine bios-install
+- [x] Remade boot menu wallpaper (v0.4.0 composition)
 
 ## M3 — Memory management
 - [ ] PMM (free-list/bitmap instead of bump)

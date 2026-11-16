@@ -18,8 +18,8 @@ void pic_init(void)
     outb(PIC2_DATA, 0x02); io_wait();
     outb(PIC1_DATA, 0x01); io_wait();  /* ICW4: 8086 mode */
     outb(PIC2_DATA, 0x01); io_wait();
-    outb(PIC1_DATA, 0xFC);             /* mask all but IRQ0 (PIT) and IRQ1 (keyboard) */
-    outb(PIC2_DATA, 0xFF);
+    outb(PIC1_DATA, 0xF8);             /* mask all but IRQ0/1 and IRQ2 (cascade for the slave) */
+    outb(PIC2_DATA, 0xEF);             /* slave: only IRQ12 (mouse) unmasked */
 }
 
 void pic_eoi(int vector)

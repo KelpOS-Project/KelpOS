@@ -33,6 +33,13 @@ void console_fill(unsigned col0, unsigned row0,
 /* colors for subsequent kputc/kprintf output on the fb terminal */
 void console_set_colors(uint32_t fg, uint32_t bg);
 
+/* mouse cursor overlay (pixel position); show() saves the covered
+ * pixels and draws the arrow, hide() restores them */
+void console_cursor_show(int px, int py);
+void console_cursor_hide(void);
+void console_cursor_move(int px, int py);
+void console_cursor_repaint(void);
+
 /* default scheme */
 #define KELP_FG 0xd8d8d8u
 #define KELP_BG 0x10141au

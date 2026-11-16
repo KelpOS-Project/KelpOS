@@ -2,7 +2,7 @@
 #  KelpOS — FOSS Unix-like x86_64 kernel (Limine)
 # ─────────────────────────────────────────────────────────────
 
-VERSION := 0.3.0
+VERSION := 0.4.0
 BUILD   := build
 OBJDIR  := $(BUILD)/obj
 
@@ -46,11 +46,16 @@ ifneq ($(wildcard $(RUSTLIB)),)
   LINKLIBS := $(RUSTLIB)
 endif
 
-.PHONY: all kernel iso limine font rust run run-debug test test-qemu clean help FORCE
+.PHONY: all kernel kelpinstall iso limine font rust run run-debug test test-qemu clean help FORCE
 
 all: kernel
 
 kernel: $(BUILD)/kelpos.elf
+
+kelpinstall: $(BUILD)/kelpinstall
+
+$(BUILD)/kelpinstall: scripts/kelpinstall.c
+	$(HOSTCC) -Wall -Wextra -o $@ $^
 
 $(OBJDIR)/%.o: %.c $(BUILD)/pkgconf.h
 	@mkdir -p $(dir $@)

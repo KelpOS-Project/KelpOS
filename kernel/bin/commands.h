@@ -36,7 +36,10 @@ int cmd_help(int argc, char **argv);
 int cmd_echo(int argc, char **argv);
 int cmd_clear(int argc, char **argv);
 int cmd_uptime(int argc, char **argv);
-int cmd_pkg(int argc, char **argv);
+int cmd_kpm(int argc, char **argv); /* kernel/bin/kpm.c — package manager */
+int cmd_uname(int argc, char **argv);  /* kernel/bin/uname.c */
+int cmd_date(int argc, char **argv);   /* kernel/bin/date.c */
+int cmd_env(int argc, char **argv);    /* kernel/bin/env.c */
 int cmd_reboot(int argc, char **argv);
 int cmd_shutdown(int argc, char **argv);
 int cmd_desktop(int argc, char **argv); /* kernel/desktop.c */

@@ -1,4 +1,4 @@
-# KelpOS — FOSS Unix-like x86_64 Kernel (v0.3.0)
+# KelpOS — FOSS Unix-like x86_64 Kernel (v0.4.0)
 
 > **Made with AI** — KelpOS is developed with the help of AI coding agents. See [AI-POLICY.md](AI-POLICY.md) for how AI assistance is used and reviewed.
 
@@ -6,14 +6,13 @@ KelpOS is a free (GPL-3.0), Unix-like hobby kernel for **x86_64**,
 written in **C17** with an optional **Rust** component (`rust/krust`).
 It boots via the **Limine Boot Protocol**.
 
-**v0.3.0 highlights:** graphical desktop (Terminal / Files / Browser /
-About), a filesystem stack (`fs/vfs` mount layer, read-only
-**FAT12/16/32 + exFAT** driver, `ext4`/`btrfs` superblock probe
-skeletons), Unix file commands (`ls pwd cd mkdir tree cat`), users &
-groups (`adduser groupmod whoami id doas sudo`), a real-disk test
-volume mounted at `/media/disk0` (`mounts diskls diskcat`), a
-`fastfetch`-style system info, boot menu wallpaper and a second
-"Silent Boot" boot entry, plus the `kelpinstall` ncurses installer.
+**v0.4.0 highlights:** a **mouse-driven window manager** desktop (PS/2
+mouse driver with IRQ12: overlapping windows, title bars, dragging,
+start menu, taskbar with a live RTC clock), `kelpinstall` rewritten in
+**C** (real install by default, ANSI TUI), the package manager is now
+**`kpm` with install/uninstall** (persisted to `/etc/kpm/installed`),
+more Unix commands (`rm touch wc head tail grep uname date env`), and
+a remade boot menu wallpaper.
 
 ## Project structure
 
@@ -31,7 +30,7 @@ KelpOS-main/
 │   ├── boot.S              Entry (_start), GDT reload, ISR stubs (NASM)
 │   ├── kernel.c            kmain, Limine requests, heap, fs wiring
 │   ├── console.c/h         Serial + framebuffer color-cell text terminal
-│   ├── desktop.c/h         Graphical desktop (keyboard-driven)
+│   ├── desktop.c/h         Window-manager desktop (mouse-driven)
 │   ├── shell.c/h           Interactive shell (with cwd)
 │   ├── users.c/h           User/group database (mirrored to /etc)
 │   ├── font.c              Embedded 8x16 bitmap font (generated)
@@ -41,7 +40,7 @@ KelpOS-main/
 │   ├── timer.c/h           PIT ticker (100 Hz)
 │   ├── panic.c/h           Kernel panic
 │   └── bin/                Built-in commands (help, echo, uptime, ...)
-│       ├── fs.c            "fs" package table (ls pwd cd mkdir tree cat)
+│       ├── fs.c            "fs" package table (ls pwd cd mkdir tree cat rm touch wc head tail grep)
 │       ├── adduser.c       "users" package (adduser groupmod whoami id doas)
 │       ├── fastfetch.c     "fastfetch" package
 │       ├── mounts.c        "diskfs" package (mounts diskls diskcat)
@@ -49,6 +48,7 @@ KelpOS-main/
 ├── drivers/
 │   ├── serial.c/h          16550 UART (COM1)
 │   └── keyboard.c/h        PS/2 keyboard (IRQ1, arrows/Esc)
+│   └── mouse.c/h           PS/2 mouse (IRQ12, stream mode, polled API)
 ├── memory/
 │   └── heap.c/h            Bump allocator (preparation for PMM/VMM)
 ├── fs/                     Filesystem stack
@@ -68,7 +68,7 @@ KelpOS-main/
 │   ├── genwallpaper.py     Generates the boot menu wallpaper
 │   ├── gendiskimg.sh       Generates the FAT16 demo disk image
 │   ├── pkgconf.py          Package selection (PKGS=...) for the build
-│   └── kelpinstall         ncurses installer (dry-run default)
+│   └── kelpinstall.c       C installer (ANSI TUI, real install is the default)
 ├── docs/ROADMAP.md         Roadmap
 └── README.md               This file
 ```
@@ -92,10 +92,13 @@ always present; the optional packages are `fs`, `users`, `fastfetch`,
   The syntax is handled by `scripts/pkgconf.py` and also accepts
   `all`, `all -fortune` (everything except fortune), and plain
   removals like `-cowsay`.
-- **Runtime toggle** — the shell command `pkg` controls packages at
-  runtime: `pkg list`, `pkg info <name>`, `pkg enable <name>`,
-  `pkg disable <name>`. The runtime state is RAM-only and resets on
-  reboot; `core` cannot be disabled.
+- **Runtime install/uninstall** — the shell command `kpm` manages
+  packages at runtime: `kpm list`, `kpm info <name>`,
+  `kpm install <name>`, `kpm uninstall <name>`, `kpm update`. The
+  installed set is mirrored to `/etc/kpm/installed`; `core` cannot be
+  uninstalled. Uninstalling disables the commands (compiled-in code
+  stays in the image — this is the honest equivalent for a
+  single-binary kernel).
 
 ## Prerequisites
 
@@ -115,12 +118,14 @@ make run      # build the ISO and boot it in QEMU
 Console output runs over `serial stdio`. In addition, the framebuffer
 terminal shows the shell text directly in the QEMU window (8x16 font).
 Shell commands: `help`, `echo`, `uptime`, `mem`, `crc`, `about`,
-`cowsay`, `fortune`, `pkg`, `clear`, `reboot`, `shutdown`, `desktop`
-(graphical desktop), plus the packages `fs` (`ls pwd cd mkdir tree
-cat`), `users` (`adduser groupmod whoami id doas sudo`), `fastfetch`
-and `diskfs` (`mounts diskls diskcat` — the FAT16 demo disk shipped as
-a boot module is mounted at `/media/disk0`; ext4/btrfs volumes are
-detected but read access lands with the M5 milestone).
+`cowsay`, `fortune`, `kpm` (list/install/uninstall), `uname`, `date`,
+`env`, `clear`, `reboot`, `shutdown`, `desktop` (window-manager
+desktop), plus the packages `fs` (`ls pwd cd mkdir tree cat rm touch
+wc head tail grep`), `users` (`adduser groupmod whoami id doas sudo`),
+`fastfetch` and `diskfs` (`mounts diskls diskcat` — the FAT16 demo
+disk shipped as a boot module is mounted at `/media/disk0`;
+ext4/btrfs volumes are detected but read access lands with the M5
+milestone).
 
 ### Boot entries
 
@@ -131,15 +136,19 @@ The Limine menu (with wallpaper) offers:
 
 ## Installer
 
-`scripts/kelpinstall` is an ncurses TUI that picks the **Device of
-Choice** and the packages to build into the kernel, then partitions
-the disk (MBR, FAT32 at LBA 63), copies the payload and installs the
-Limine BIOS stage. **Dry run is the default** — pass `--real` (and
-confirm by typing the device name) to actually write:
+`kelpinstall` (C, built with `make kelpinstall` → `build/kelpinstall`)
+is an ANSI TUI that picks the **Device of Choice** and the packages to
+build into the kernel, then partitions the disk (MBR, FAT32 at
+LBA 2048), copies the payload and installs the Limine BIOS stage.
+**It really installs by default** — nothing is written only with the
+explicit `--dry-run` flag. A real install wipes the target and
+requires root + confirmation by typing the device name:
 
 ```sh
-sudo scripts/kelpinstall --real /dev/sdX          # TUI, real install
-scripts/kelpinstall --non-interactive /dev/sdX --packages ALL   # dry run
+make kelpinstall
+sudo build/kelpinstall                 # TUI, real install
+build/kelpinstall --dry-run            # print the plan, write nothing
+build/kelpinstall --non-interactive /dev/sdX --packages fs,users,about
 ```
 
 ## Tests

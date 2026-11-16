@@ -12,6 +12,7 @@
 #include "pic.h"
 #include "timer.h"
 #include "keyboard.h"
+#include "mouse.h"
 #include "shell.h"
 #include "heap.h"
 #include "ramfs.h"
@@ -22,6 +23,7 @@
 #include "ramdisk.h"
 
 void diskfs_init(void); /* kernel/bin/mounts.c: registers fs backends */
+void kpm_restore(void); /* kernel/bin/kpm.c: package DB from last boot */
 
 __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(0);
@@ -76,31 +78,21 @@ static void init_diskfs(void)
     block_init();
     vfs_init();
     diskfs_init(); /* registers fat / ext4 / btrfs backend ops */
-    kprintf("[diskfs] ops registered\n");
 
     struct limine_module_response *r = module_request.response;
     if (!r)
         return;
-    kprintf("[diskfs] %llu modules\n",
-            (unsigned long long)r->module_count);
 
     for (uint64_t i = 0; i < r->module_count; i++) {
         struct limine_file *m = r->modules[i];
         if (!m || !m->path || !strstr(m->path, "disk.img"))
             continue;
         /* limine_file.address is already an HHDM virtual address */
-        kprintf("[diskfs] module '%s' at %p size %llu\n",
-                m->path, (void *)(uintptr_t)m->address,
-                (unsigned long long)m->size);
         if (ramdisk_register("ram0", (uintptr_t)m->address, m->size) == 0) {
             struct blockdev *bd = block_find("ram0");
             if (bd && vfs_mount(bd, "/media/disk0") == 0)
                 kprintf("diskfs: mounted %s (%s) at /media/disk0\n",
                         bd->name, vfs_mount_get(0)->ops->name);
-            else
-                kprintf("[diskfs] mount failed\n");
-        } else {
-            kprintf("[diskfs] ramdisk_register failed\n");
         }
         break;
     }
@@ -157,19 +149,26 @@ void kmain(void)
     timer_init(100);      /* 100 Hz */
     keyboard_init();
     init_heap();
+    if (framebuffer_request.response && framebuffer_request.response->framebuffer_count >= 1) {
+        struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
+        mouse_init((int)fb->width, (int)fb->height);
+    }
 
     /* ramfs + users (users_sync mirrors the DB into /etc) */
     ramfs_init();
     ramfs_mkdir("/etc");
+    ramfs_mkdir("/etc/kpm");
     ramfs_mkdir("/home");
     ramfs_mkdir("/home/root");
     ramfs_mkdir("/tmp");
     ramfs_mkfile("/etc/motd");
+    ramfs_mkfile("/etc/kpm/installed");
     struct ramfs_node *motd = ramfs_resolve_at(ramfs_root(), "/etc/motd");
     if (motd)
-        ramfs_write(motd, "Welcome to KelpOS — the FOSS Unix-like kernel.\n", 47);
+        ramfs_write(motd, "Welcome to KelpOS - the FOSS Unix-like kernel.\n", 47);
     users_init();
     init_diskfs();
+    kpm_restore(); /* re-enable the packages installed last boot */
 
     __asm__ volatile("sti"); /* Limine enters with IF=0: enable IRQs */
 

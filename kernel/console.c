@@ -254,6 +254,119 @@ void console_splash(struct limine_framebuffer *f)
         }
 }
 
+/* ── Mouse cursor overlay ───────────────────────────────────────────── */
+
+#define CUR_W 12
+#define CUR_H 18
+
+static struct {
+    uint32_t patch[CUR_H][CUR_W];
+    int x, y;
+    bool visible;
+} mcur;
+
+/* arrow pointer, 1 = body, 2 = outline */
+static const uint8_t arrow_map[CUR_H][CUR_W] = {
+    {1,0,0,0,0,0,0,0,0,0,0,0},
+    {1,1,0,0,0,0,0,0,0,0,0,0},
+    {1,2,1,0,0,0,0,0,0,0,0,0},
+    {1,2,2,1,0,0,0,0,0,0,0,0},
+    {1,2,2,2,1,0,0,0,0,0,0,0},
+    {1,2,2,2,2,1,0,0,0,0,0,0},
+    {1,2,2,2,2,2,1,0,0,0,0,0},
+    {1,2,2,2,2,2,2,1,0,0,0,0},
+    {1,2,2,2,2,2,2,2,1,0,0,0},
+    {1,2,2,2,2,2,2,2,2,1,0,0},
+    {1,2,2,2,2,2,1,2,2,1,0,0},
+    {1,2,2,1,2,2,1,1,0,0,0,0},
+    {1,2,2,1,1,2,2,1,0,0,0,0},
+    {1,2,1,0,1,2,2,1,0,0,0,0},
+    {1,2,2,1,1,2,2,1,0,0,0,0},
+    {1,2,2,2,2,2,1,1,0,0,0,0},
+    {0,1,2,2,2,1,1,0,0,0,0,0},
+    {0,0,1,1,1,1,0,0,0,0,0,0},
+};
+
+static bool cur_inited(void)
+{
+    return fb.active && mcur.visible;
+}
+
+static void cur_draw(int px, int py)
+{
+    for (int r = 0; r < CUR_H; r++) {
+        uint64_t y = (uint64_t)py + (uint64_t)r;
+        if (y >= fb.height)
+            break;
+        for (int c = 0; c < CUR_W; c++) {
+            uint64_t x = (uint64_t)px + (uint64_t)c;
+            if (x >= fb.width)
+                continue;
+            /* save the covered pixel for EVERY in-bounds cell (also
+             * transparent ones) so cur_restore() repairs the full rect */
+            mcur.patch[r][c] = fb.px[y * fb.stride + x];
+            uint8_t m = arrow_map[r][c];
+            if (!m)
+                continue;
+            fb.px[y * fb.stride + x] =
+                m == 2 ? 0xFF101419u : 0xFFF2F5F9u; /* outline / body */
+        }
+    }
+    mcur.x = px;
+    mcur.y = py;
+    mcur.visible = true;
+}
+
+static void cur_restore(void)
+{
+    if (!cur_inited())
+        return;
+    for (int r = 0; r < CUR_H; r++) {
+        uint64_t y = (uint64_t)mcur.y + (uint64_t)r;
+        if (y >= fb.height)
+            break;
+        for (int c = 0; c < CUR_W; c++) {
+            uint64_t x = (uint64_t)mcur.x + (uint64_t)c;
+            if (x >= fb.width)
+                continue;
+            fb.px[y * fb.stride + x] = mcur.patch[r][c];
+        }
+    }
+    mcur.visible = false;
+}
+
+void console_cursor_show(int px, int py)
+{
+    if (!fb.active)
+        return;
+    cur_restore();
+    cur_draw(px, py);
+}
+
+void console_cursor_hide(void)
+{
+    cur_restore();
+}
+
+void console_cursor_move(int px, int py)
+{
+    if (!fb.active)
+        return;
+    if (px == mcur.x && py == mcur.y && mcur.visible)
+        return;
+    cur_restore();
+    cur_draw(px, py);
+}
+
+/* redraw the cursor over freshly painted content (after a screen
+ * repaint the saved patch is stale, so draw without restoring) */
+void console_cursor_repaint(void)
+{
+    if (!fb.active || !mcur.visible)
+        return;
+    cur_draw(mcur.x, mcur.y);
+}
+
 /* ── Unified output ─────────────────────────────────────────────────── */
 
 void kputc(int c)

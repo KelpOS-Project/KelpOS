@@ -6,6 +6,7 @@
 #include "pic.h"
 #include "timer.h"
 #include "keyboard.h"
+#include "mouse.h"
 #include "panic.h"
 
 extern void *isr_stub_table[];
@@ -56,6 +57,9 @@ void isr_handler(struct isr_frame *f)
     } else if (f->int_no == 33) {   /* PS/2 keyboard */
         keyboard_isr();
         pic_eoi(33);
+    } else if (f->int_no == 44) {   /* PS/2 mouse */
+        mouse_isr();
+        pic_eoi(44);
     } else if (f->int_no >= 32 && f->int_no <= 47) {
         pic_eoi((int)f->int_no);    /* unused IRQ */
     } else if (f->int_no < 32) {

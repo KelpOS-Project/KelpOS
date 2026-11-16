@@ -27,6 +27,6 @@ int cmd_help(int argc, char **argv)
             kprintf("%s\n", p->cmds[c].help);
         }
     }
-    kprintf("Use 'pkg list' to see disabled and not-built packages.\n");
+    kprintf("Use 'kpm list' to see not-installed and not-built packages.\n");
     return 0;
 }
