@@ -30,6 +30,12 @@ void console_draw_cell(unsigned col, unsigned row, char ch,
 void console_fill(unsigned col0, unsigned row0,
                   unsigned col1, unsigned row1, uint32_t bg);
 
+/* blit a 24-bit (BGR) image over the whole framebuffer (desktop
+ * wallpaper); pix points at the first pixel row, pitch is the byte
+ * width of one source row, flip_y for bottom-up BMP scanlines */
+void console_draw_image24(const uint8_t *pix, int iw, int ih, int pitch,
+                          int flip_y);
+
 /* colors for subsequent kputc/kprintf output on the fb terminal */
 void console_set_colors(uint32_t fg, uint32_t bg);
 

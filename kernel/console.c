@@ -111,6 +111,30 @@ void console_set_colors(uint32_t fgc, uint32_t bgc)
     cur_bg = bgc;
 }
 
+/* blit a 24-bit (BGR) image over the whole framebuffer, scaled with
+ * nearest-neighbor sampling. flip_y: BMP scanlines are usually stored
+ * bottom-up (positive header height). Used for the desktop wallpaper. */
+void console_draw_image24(const uint8_t *pix, int iw, int ih, int pitch,
+                          int flip_y)
+{
+    if (!fb.active || !pix || iw <= 0 || ih <= 0 || pitch < iw * 3)
+        return;
+    for (uint64_t y = 0; y < fb.height; y++) {
+        int sy = (int)((y * (uint64_t)ih) / fb.height);
+        if (flip_y)
+            sy = ih - 1 - sy;
+        const uint8_t *row = pix + (size_t)sy * (size_t)pitch;
+        uint64_t dst = y * fb.stride;
+        for (uint64_t x = 0; x < fb.width; x++) {
+            int sx = (iw == (int)fb.width) ? (int)x
+                     : (int)((x * (uint64_t)iw) / fb.width);
+            const uint8_t *p = row + (size_t)sx * 3;
+            fb.px[dst + x] = 0xFF000000u | ((uint32_t)p[2] << 16) |
+                             ((uint32_t)p[1] << 8) | (uint32_t)p[0];
+        }
+    }
+}
+
 static void fb_scroll(void)
 {
     if (!fb.active)

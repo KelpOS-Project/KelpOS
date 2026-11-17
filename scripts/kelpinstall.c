@@ -1,14 +1,21 @@
 /* kelpinstall.c — the KelpOS installer (host side, plain C).
  *
+ * kelpinstall is a REAL COMMAND: build it with `make kelpinstall` and
+ * install it with `make install` (PREFIX ?= /usr/local). Running the
+ * raw build/kelpinstall binary by accident is exactly what the install
+ * step prevents — the command only exists after you put it there.
+ *
  * Walks the user through:
  *   1. picking the target device (Device of Choice),
  *   2. picking the packages to build into the kernel,
- *   3. writing the disk: partition table, FAT32 boot partition,
+ *   3. three warnings (data loss, hobby software, wrong-disk risk),
+ *   4. writing the disk: partition table, FAT32 boot partition,
  *      bootloader (Limine) install, ISO contents copied to disk.
  *
  * IT REALLY INSTALLS BY DEFAULT. The only no-write mode is the
  * explicit --dry-run flag, which just prints the plan. A real install
- * wipes the target device and requires root.
+ * wipes the target device, requires root and shows the three warnings
+ * before the confirmation.
  *
  * Usage:
  *   kelpinstall                    # TUI, real install
@@ -409,6 +416,11 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
             printf("usage: kelpinstall [--dry-run] [--non-interactive "
                    "DEVICE --packages LIST|ALL]\n");
+            printf("\nKelpOS disk installer. Install the command first:\n");
+            printf("  make kelpinstall && sudo make install   # -> "
+                   "/usr/local/bin/kelpinstall\n");
+            printf("\nA real install shows 3 warnings and wipes the target "
+                   "device.\n");
             return 0;
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "kelpinstall: unknown option %s\n", argv[i]);
@@ -510,12 +522,27 @@ int main(int argc, char **argv)
         return install(device, packages, 1);
     }
 
-    /* confirmation: the disk WILL be erased */
+    /* the three warnings, shown for EVERY real install */
     printf("\n");
     red();
-    printf("WARNING: %s will be ERASED and KelpOS installed.\n", device);
+    printf("  ==================== 3 WARNINGS — READ THIS ====================\n");
+    printf("  1. EVERY byte on %s will be PERMANENTLY DESTROYED.\n", device);
+    printf("  2. KelpOS is experimental hobby software — do not install\n"
+           "     over a drive that holds your only copy of important data.\n"
+           "     Keep a backup.\n");
+    printf("  3. A typo in the device name can erase the WRONG disk (e.g.\n"
+           "     your system drive). Check the name twice: %s\n", device);
+    printf("  ================================================================\n");
     attr_reset();
     printf("Packages: %s\n", packages);
+
+    if (non_interactive) {
+        /* --non-interactive IS the explicit consent: the operator
+         * named the device on the command line */
+        return install_real(device);
+    }
+
+    /* confirmation: type the device name */
     printf("Type the device name to confirm (%s): ", device);
     fflush(stdout);
     char conf[128] = "";

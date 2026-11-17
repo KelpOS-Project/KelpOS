@@ -8,8 +8,9 @@ It boots via the **Limine Boot Protocol**.
 
 **v0.4.0 highlights:** a **mouse-driven window manager** desktop (PS/2
 mouse driver with IRQ12: overlapping windows, title bars, dragging,
-start menu, taskbar with a live RTC clock), `kelpinstall` rewritten in
-**C** (real install by default, ANSI TUI), the package manager is now
+start menu, taskbar with a live RTC clock, flicker-free dirty-region
+redraws and the boot wallpaper as an image on the desktop), `kelpinstall` rewritten in
+**C** (real install by default, ANSI TUI, installed as a real command), the package manager is now
 **`kpm` with install/uninstall** (persisted to `/etc/kpm/installed`),
 more Unix commands (`rm touch wc head tail grep uname date env`), and
 a remade boot menu wallpaper.
@@ -22,7 +23,8 @@ KelpOS-main/
 ├── include/              Global headers (io.h, version.h; limine.h is fetched)
 ├── boot/
 │   ├── limine.conf         Bootloader config (wallpaper, KelpOS + Silent Boot)
-│   ├── wallpaper.bmp       Boot menu background (scripts/genwallpaper.py)
+│   ├── wallpaper.bmp       Boot menu background + desktop wallpaper
+│   │                       (scripts/genwallpaper.py)
 │   ├── silent.flag         Module flag: Silent Boot entry boots to desktop
 │   └── disk.img            FAT16 demo disk, mounted at /media/disk0
 │                           (scripts/gendiskimg.sh)
@@ -137,18 +139,24 @@ The Limine menu (with wallpaper) offers:
 ## Installer
 
 `kelpinstall` (C, built with `make kelpinstall` → `build/kelpinstall`)
-is an ANSI TUI that picks the **Device of Choice** and the packages to
-build into the kernel, then partitions the disk (MBR, FAT32 at
-LBA 2048), copies the payload and installs the Limine BIOS stage.
-**It really installs by default** — nothing is written only with the
-explicit `--dry-run` flag. A real install wipes the target and
+is a **real command** — it is not meant to be run from `build/` by
+accident. Install it explicitly first (`sudo make install`, prefix
+configurable with `PREFIX`, default `/usr/local/bin`), then run it as
+`kelpinstall`. It is an ANSI TUI that picks the **Device of Choice**
+and the packages to build into the kernel, then partitions the disk
+(MBR, FAT32 at LBA 2048), copies the payload and installs the Limine
+BIOS stage. **It really installs by default** — nothing is written
+only with the explicit `--dry-run` flag. Every real install shows
+**3 warnings** (data loss, hobby software, wrong-disk risk) and
 requires root + confirmation by typing the device name:
 
 ```sh
 make kelpinstall
-sudo build/kelpinstall                 # TUI, real install
-build/kelpinstall --dry-run            # print the plan, write nothing
-build/kelpinstall --non-interactive /dev/sdX --packages fs,users,about
+sudo make install                      # install the command
+kelpinstall --dry-run                  # print the plan, write nothing
+sudo kelpinstall                       # TUI, real install (3 warnings)
+kelpinstall --non-interactive /dev/sdX --packages fs,users,about
+sudo make uninstall                    # remove the command again
 ```
 
 ## Tests

@@ -71,6 +71,24 @@ static bool boot_flag(const char *needle)
     return false;
 }
 
+/* find a boot module by path substring; returns its (HHDM) address
+ * and size, or NULL. Used for e.g. the desktop wallpaper BMP. */
+const void *boot_module(const char *needle, size_t *size)
+{
+    struct limine_module_response *r = module_request.response;
+    if (!r)
+        return NULL;
+    for (uint64_t i = 0; i < r->module_count; i++) {
+        struct limine_file *m = r->modules[i];
+        if (!m || !m->path || !strstr(m->path, needle))
+            continue;
+        if (size)
+            *size = (size_t)m->size;
+        return (const void *)(uintptr_t)m->address;
+    }
+    return NULL;
+}
+
 /* block layer + VFS: mount the disk.img module (a FAT image shipped in
  * the ISO) as the first real filesystem at /media/disk0 */
 static void init_diskfs(void)

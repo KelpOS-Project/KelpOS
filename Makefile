@@ -46,13 +46,24 @@ ifneq ($(wildcard $(RUSTLIB)),)
   LINKLIBS := $(RUSTLIB)
 endif
 
-.PHONY: all kernel kelpinstall iso limine font rust run run-debug test test-qemu clean help FORCE
+.PHONY: all kernel kelpinstall install uninstall iso limine font rust run run-debug test test-qemu clean help FORCE
 
 all: kernel
 
 kernel: $(BUILD)/kelpos.elf
 
 kelpinstall: $(BUILD)/kelpinstall
+
+# kelpinstall is a real command: it is NOT meant to be run from build/
+# by accident. Install it explicitly (PREFIX ?= /usr/local) and run it
+# as `kelpinstall` afterwards.
+PREFIX ?= /usr/local
+
+install: kelpinstall
+	install -D -m 0755 $(BUILD)/kelpinstall $(DESTDIR)$(PREFIX)/bin/kelpinstall
+
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/kelpinstall
 
 $(BUILD)/kelpinstall: scripts/kelpinstall.c
 	$(HOSTCC) -Wall -Wextra -o $@ $^
@@ -149,6 +160,9 @@ help:
 	@echo "make test-qemu   — boot smoke test in QEMU"
 	@echo "make rust        — build the optional Rust component"
 	@echo "make font        — regenerate the embedded font (kernel/font.c)"
+	@echo "make kelpinstall — build the C installer (build/kelpinstall)"
+	@echo "make install     — install kelpinstall as a command (PREFIX, default /usr/local/bin)"
+	@echo "make uninstall   — remove the installed kelpinstall command"
 	@echo "make limine      — re-download the Limine bootloader"
 	@echo "make PKGS=\"crc cowsay\" iso — build with selected optional packages"
 	@echo "make clean"

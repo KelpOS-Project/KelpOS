@@ -23,6 +23,9 @@
 - [x] PS/2 mouse driver (IRQ12, stream mode, polled API)
 - [x] Mouse-driven window manager: overlapping windows, title bars,
       drag & drop focus, close box, start menu, taskbar with RTC clock
+- [x] Desktop wallpaper: the boot wallpaper.bmp shipped as a boot
+      module and drawn on the desktop; dirty-region redraws (no
+      flicker from cursor movement)
 - [x] kpm package manager: install/uninstall, /etc/kpm/installed DB
 - [x] More Unix commands: rm, touch, wc, head, tail, grep, uname, date (RTC), env
 - [x] kelpinstall in C: real install by default, ANSI TUI,

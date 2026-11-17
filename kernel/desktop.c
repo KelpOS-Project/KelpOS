@@ -85,8 +85,56 @@ static void put_str(int col, int row, const char *s, uint32_t fg,
 
 /* ── wallpaper ──────────────────────────────────────────────────────── */
 
+/* the boot module wallpaper.bmp (same image as the Limine boot menu),
+ * parsed as an uncompressed 24-bit BMP */
+static const uint8_t *wall_pix;
+static int wall_w, wall_h, wall_pitch;
+static int wall_flip; /* positive BMP height = scanlines bottom-up */
+
+static uint32_t le32(const uint8_t *p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static uint16_t le16(const uint8_t *p)
+{
+    return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
+}
+
+extern const void *boot_module(const char *needle, size_t *size);
+
+static void wallpaper_init(void)
+{
+    size_t sz = 0;
+    const uint8_t *m = boot_module("wallpaper.bmp", &sz);
+    if (!m || sz < 54 || m[0] != 'B' || m[1] != 'M')
+        return;
+    uint32_t off = le32(m + 10);
+    int32_t w = (int32_t)le32(m + 18);
+    int32_t h = (int32_t)le32(m + 22);
+    uint16_t bpp = le16(m + 28);
+    if (bpp != 24 || w <= 0 || h == 0)
+        return;
+    int ah = h < 0 ? -h : h;
+    size_t pitch = ((size_t)w * 3 + 3) & ~(size_t)3;
+    if ((size_t)off + pitch * (size_t)ah > sz)
+        return;
+    wall_pix = m + off;
+    wall_w = w;
+    wall_h = ah;
+    wall_pitch = (int)pitch;
+    wall_flip = h > 0;
+}
+
 static void draw_wallpaper(void)
 {
+    if (wall_pix) {
+        console_draw_image24(wall_pix, wall_w, wall_h, wall_pitch,
+                             wall_flip);
+        return;
+    }
+    /* fallback: the old diagonal two-tone pattern */
     unsigned cols = console_cols(), rows = console_rows();
     static const uint32_t band[4] = {
         COL_WALL0, COL_WALL1, COL_WALL2, COL_WALL3
@@ -434,6 +482,12 @@ done:
 static int  win_focused(void);
 static void start_drag(int i, int cx, int cy);
 
+/* set by every state change that needs a full repaint (open/close/
+ * move/raise windows, menu changes). The main loop repaints only when
+ * this is set, so plain cursor movement never redraws the screen —
+ * that is what made the desktop flicker. */
+static bool screen_dirty;
+
 static void handle_click(void)
 {
     int cx = cell_x(), cy = cell_y();
@@ -447,18 +501,22 @@ static void handle_click(void)
             cy > y0 && cy <= y0 + NMENU)
             menu_action(cy - y0 - 1);
         menu_visible = false;
+        screen_dirty = true; /* the menu must be erased */
         return;
     }
     /* taskbar */
     if (cy == bar) {
-        if (cx < 9)
+        if (cx < 9) {
             menu_visible = true;
-        else {
+            menu_open = -1;
+            screen_dirty = true;
+        } else {
             int bx = 10;
             for (int i = 0; i < nwins && bx < (int)cols - 12; i++) {
                 if (cx >= bx && cx < bx + 18) {
                     wins[i].minimized = !wins[i].minimized;
                     win_raise(i);
+                    screen_dirty = true;
                     return;
                 }
                 bx += 18;
@@ -472,12 +530,14 @@ static void handle_click(void)
     if (i < 0)
         return;
     win_raise(i);
+    screen_dirty = true; /* raise/focus changes the z-order */
     struct win *w = &wins[i];
     int x1 = w->x + w->w - 1, y0 = w->y;
 
     if (cy == y0) {
         if (cx >= x1 - 3) { /* close box */
             win_close(i);
+            screen_dirty = true;
             return;
         }
         start_drag(i, cx, cy);
@@ -488,12 +548,13 @@ static void handle_click(void)
         return;
     int bx0 = w->x + 1, bx1 = x1 - 1;
 
-    /* toolbar ↑ button */
+    /* toolbar ^ button */
     if (cy == y0 + 1 && cx >= bx0 + 1 && cx <= bx0 + 3) {
         if (w->viewing)
             w->viewing = 0;
         else
             strip_last(w->path);
+        screen_dirty = true;
         return;
     }
 
@@ -503,6 +564,7 @@ static void handle_click(void)
 
     if (w->viewing) {
         w->viewing = 0;
+        screen_dirty = true;
         return;
     }
     struct ramfs_node *d = ramfs_resolve_at(ramfs_root(), w->path);
@@ -519,8 +581,10 @@ static void handle_click(void)
                  w->path, strcmp(w->path, "/") ? "/" : "",
                  ramfs_node_name(kids[idx]));
         snprintf(w->path, sizeof(w->path), "%s", newpath);
+        screen_dirty = true;
     } else {
         w->viewing = kids[idx];
+        screen_dirty = true;
     }
 }
 
@@ -560,11 +624,39 @@ static void poll_drag(bool moved)
     if (nx != w->x || ny != w->y) {
         w->x = nx;
         w->y = ny;
-        draw_screen();
+        screen_dirty = true;
     }
 }
 
 /* ── main loop ──────────────────────────────────────────────────────── */
+
+/* what the cursor currently points at on the taskbar/menu, so the
+ * hover highlight is only repainted when it actually changes:
+ * -1 nothing, 0 start button, 1..n window buttons, 100+k menu item */
+static int hover_sig(void)
+{
+    int cx = cell_x(), cy = cell_y();
+    unsigned cols = console_cols(), rows = console_rows();
+    int bar = (int)rows - 1;
+    if (menu_visible) {
+        int x0 = 1, y0 = (int)rows - 2 - (NMENU + 1);
+        if (cx >= x0 + 1 && cx <= x0 + 12 &&
+            cy > y0 && cy <= y0 + NMENU)
+            return 100 + (cy - y0 - 1);
+        return -1;
+    }
+    if (cy == bar) {
+        if (cx < 9)
+            return 0;
+        int bx = 10;
+        for (int i = 0; i < nwins && bx < (int)cols - 12; i++) {
+            if (cx >= bx && cx < bx + 18)
+                return 1 + i;
+            bx += 18;
+        }
+    }
+    return -1;
+}
 
 void desktop_run(void)
 {
@@ -576,12 +668,14 @@ void desktop_run(void)
     nwins = 0;
     menu_visible = false;
     drag = -1;
+    wallpaper_init();
     draw_screen();
     console_cursor_move(mouse_x(), mouse_y()); /* show the cursor */
 
     unsigned long long last_sec = (unsigned long long)-1;
+    int last_hover = hover_sig();
     for (;;) {
-        bool events = false;
+        screen_dirty = false;
 
         /* read both edges ONCE: consuming them in a short-circuit OR
          * would drop the click whenever the mouse did not move */
@@ -589,32 +683,53 @@ void desktop_run(void)
         int clicked = mouse_left_click();
         if (moved || clicked) {
             console_cursor_move(mouse_x(), mouse_y());
-            events = true;
             poll_drag(moved != 0);
             if (clicked)
                 handle_click();
+            /* hovering a menu item selects it */
+            if (menu_visible) {
+                int hov = hover_sig();
+                if (hov >= 100 && hov - 100 != menu_open) {
+                    menu_open = hov - 100;
+                    screen_dirty = true;
+                }
+            }
         }
 
         int c = kbd_poll();
         if (c != -1) {
             if (menu_visible) {
-                if (c == KBD_UP && menu_open > 0)
+                if (c == KBD_UP && menu_open > 0) {
                     menu_open--;
-                else if (c == KBD_DOWN && menu_open < NMENU - 1)
+                    screen_dirty = true;
+                } else if (c == KBD_DOWN && menu_open < NMENU - 1) {
                     menu_open++;
-                else if (c == '\n' && menu_open >= 0)
+                    screen_dirty = true;
+                } else if (c == '\n' && menu_open >= 0) {
                     menu_action(menu_open);
-                else if (c == KBD_ESC)
+                    screen_dirty = true;
+                } else if (c == KBD_ESC) {
                     menu_visible = false;
+                    screen_dirty = true;
+                }
             } else {
-                if (c == KBD_ESC && nwins)
+                if (c == KBD_ESC && nwins) {
                     win_close(win_focused());
-                else if (c == '\n') {
+                    screen_dirty = true;
+                } else if (c == '\n') {
                     menu_visible = true;
                     menu_open = 0;
+                    screen_dirty = true;
                 }
             }
-            events = true;
+        }
+
+        /* hover highlight: only the taskbar, only when it changes */
+        int hover = hover_sig();
+        if (hover != last_hover) {
+            last_hover = hover;
+            draw_taskbar();
+            console_cursor_repaint();
         }
 
         /* clock tick: redraw the taskbar when the second changes */
@@ -625,7 +740,8 @@ void desktop_run(void)
             console_cursor_repaint();
         }
 
-        if (events)
+        /* full repaint only on real state changes */
+        if (screen_dirty)
             draw_screen();
 
         __asm__ volatile("hlt");
