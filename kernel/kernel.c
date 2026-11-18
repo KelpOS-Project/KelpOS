@@ -40,6 +40,27 @@ static volatile struct limine_hhdm_request hhdm_request = {
     .revision = 0
 };
 
+/* Enable the x87 FPU and SSE for the graphics objects (kernel/gfx/).
+ * The rest of the kernel is compiled -mno-sse, so interrupt handlers
+ * never touch the XMM registers. Called once before anything renders. */
+static void fpu_init(void)
+{
+    uint64_t cr0, cr4;
+    __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
+    cr0 &= ~(1ULL << 2);  /* EM off: no FPU emulation */
+    cr0 |= (1ULL << 1);   /* MP on */
+    cr0 &= ~(1ULL << 3);  /* TS off: FPU usable */
+    __asm__ volatile("mov %0, %%cr0" :: "r"(cr0));
+
+    __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
+    cr4 |= (1ULL << 9) | (1ULL << 10); /* OSFXSR, OSXMMEXCPT */
+    __asm__ volatile("mov %0, %%cr4" :: "r"(cr4));
+
+    __asm__ volatile("fninit");
+    uint32_t mxcsr = 0x1F80u; /* all exceptions masked, round to nearest */
+    __asm__ volatile("ldmxcsr %0" :: "m"(mxcsr));
+}
+
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_memmap_request memmap_request = {
     .id = LIMINE_MEMMAP_REQUEST,
@@ -153,6 +174,8 @@ void kmain(void)
         for (;;)
             __asm__ volatile("cli; hlt");
     }
+
+    fpu_init();
 
     console_init();
     if (framebuffer_request.response && framebuffer_request.response->framebuffer_count >= 1) {

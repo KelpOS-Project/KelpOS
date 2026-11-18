@@ -29,15 +29,24 @@ CC := $(CROSS)gcc
 # The `pkg` command can enable/disable packages at run time.
 PKGS ?= all
 
-KCFLAGS := -std=c17 -ffreestanding -fno-builtin -fno-stack-protector \
-           -fno-pic -fno-pie -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
+KCFLAGS_BASE := -std=c17 -ffreestanding -fno-builtin -fno-stack-protector \
+           -fno-pic -fno-pie -mno-red-zone \
            -mcmodel=kernel -O2 -g -Wall -Wextra \
            -Iinclude -Iklibc/include -Ikernel -Imemory -Idrivers -Ifs -I$(BUILD)
+
+# The kernel proper stays -mno-sse: interrupt handlers never touch XMM.
+KCFLAGS := $(KCFLAGS_BASE) -mno-mmx -mno-sse -mno-sse2
+
+# The TinyGL renderer is the one SSE-enabled part (x86_64 can only
+# return floats in XMM registers). The FPU/SSE is enabled in kmain().
+GFXFLAGS := $(KCFLAGS_BASE) -msse2 -mfpmath=sse -mno-avx
 
 KSRC := $(wildcard kernel/*.c) $(wildcard kernel/bin/*.c) \
         $(wildcard drivers/*.c) $(wildcard memory/*.c) $(wildcard fs/*.c) \
         $(wildcard klibc/src/*.c)
-KOBJ := $(OBJDIR)/kernel/boot.o $(patsubst %.c,$(OBJDIR)/%.o,$(KSRC))
+GFXSRC := $(wildcard kernel/gfx/*.c)
+KOBJ := $(OBJDIR)/kernel/boot.o $(patsubst %.c,$(OBJDIR)/%.o,$(KSRC)) \
+        $(patsubst %.c,$(OBJDIR)/%.o,$(GFXSRC))
 
 # Optional Rust component (linked if built: make rust)
 RUSTLIB  := rust/target/x86_64-unknown-none/release/libkrust.a
@@ -48,7 +57,7 @@ endif
 
 .PHONY: all kernel kelpinstall install uninstall iso limine font rust run run-debug test test-qemu clean help FORCE
 
-all: kernel
+all: iso
 
 kernel: $(BUILD)/kelpos.elf
 
@@ -71,6 +80,12 @@ $(BUILD)/kelpinstall: scripts/kelpinstall.c
 $(OBJDIR)/%.o: %.c $(BUILD)/pkgconf.h
 	@mkdir -p $(dir $@)
 	$(CC) $(KCFLAGS) -c $< -o $@
+
+# SSE-enabled graphics objects (more specific pattern wins over the
+# generic %.o rule above)
+$(OBJDIR)/kernel/gfx/%.o: kernel/gfx/%.c $(BUILD)/pkgconf.h
+	@mkdir -p $(dir $@)
+	$(CC) $(GFXFLAGS) -c $< -o $@
 
 $(OBJDIR)/kernel/boot.o: kernel/boot.S
 	@mkdir -p $(dir $@)
@@ -105,7 +120,7 @@ iso: $(BUILD)/kelpos.iso
 
 $(BUILD)/kelpos.iso: $(BUILD)/kelpos.elf boot/limine.conf boot/wallpaper.bmp \
 		boot/silent.flag boot/disk.img $(BUILD)/limine/limine
-	@mkdir -p $(BUILD)/iso/boot
+	mkdir -p $(BUILD)/iso/boot
 	cp $(BUILD)/kelpos.elf $(BUILD)/iso/boot/
 	cp boot/limine.conf $(BUILD)/iso/boot/
 	cp boot/wallpaper.bmp $(BUILD)/iso/
@@ -152,7 +167,8 @@ clean:
 	rm -rf $(BUILD)
 
 help:
-	@echo "make kernel      — build the kernel (build/kelpos.elf)"
+	@echo "make             — build the boot ISO, full verbose output"
+	@echo "make kernel      — build only the kernel (build/kelpos.elf)"
 	@echo "make iso         — build the boot ISO (build/kelpos.iso)"
 	@echo "make run         — boot the ISO in QEMU (GUI window + serial)"
 	@echo "make run-debug   — QEMU with GDB stub (port 1234)"

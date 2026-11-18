@@ -9,7 +9,9 @@ It boots via the **Limine Boot Protocol**.
 **v0.4.0 highlights:** a **mouse-driven window manager** desktop (PS/2
 mouse driver with IRQ12: overlapping windows, title bars, dragging,
 start menu, taskbar with a live RTC clock, flicker-free dirty-region
-redraws and the boot wallpaper as an image on the desktop), `kelpinstall` rewritten in
+redraws and the boot wallpaper as an image on the desktop), a
+**TinyGL-compatible OpenGL 1.x subset** with the classic **GLGears**
+demo as a desktop app, `kelpinstall` rewritten in
 **C** (real install by default, ANSI TUI, installed as a real command), the package manager is now
 **`kpm` with install/uninstall** (persisted to `/etc/kpm/installed`),
 more Unix commands (`rm touch wc head tail grep uname date env`), and
@@ -41,6 +43,9 @@ KelpOS-main/
 │   ├── pic.c/h             8259 PIC (remap, EOI)
 │   ├── timer.c/h           PIT ticker (100 Hz)
 │   ├── panic.c/h           Kernel panic
+│   ├── gfx/
+│   │   ├── tgl.c/h         TinyGL-compatible OpenGL 1.x software renderer
+│   │   └── gears.c/h       GLGears demo (rotating gears desktop app)
 │   └── bin/                Built-in commands (help, echo, uptime, ...)
 │       ├── fs.c            "fs" package table (ls pwd cd mkdir tree cat rm touch wc head tail grep)
 │       ├── adduser.c       "users" package (adduser groupmod whoami id doas)
@@ -113,7 +118,7 @@ always present; the optional packages are `fs`, `users`, `fastfetch`,
 ## Quick start
 
 ```sh
-make          # build the kernel (downloads Limine automatically if needed)
+make          # build the boot ISO, fully verbose (downloads Limine if needed)
 make run      # build the ISO and boot it in QEMU
 ```
 

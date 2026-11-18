@@ -28,6 +28,7 @@
 #include "shell.h"
 #include "ramfs.h"
 #include "bin/commands.h"
+#include "gfx/gears.h"
 
 /* ── palette ────────────────────────────────────────────────────────── */
 #define COL_WALL0   0x14264bu  /* wallpaper diagonal stripes */
@@ -50,7 +51,13 @@
 #define COL_WHITE   0xf2f5f9u
 
 #define MAXWINS 8
-enum { WK_FILES, WK_BROWSER, WK_ABOUT };
+enum { WK_FILES, WK_BROWSER, WK_GEARS, WK_ABOUT };
+
+/* GLGears window: 42x17 cells -> 320x240 pixel interior */
+#define GEARS_W 42
+#define GEARS_H 17
+#define GEARS_PW ((GEARS_W - 2) * 8)
+#define GEARS_PH ((GEARS_H - 2) * 16)
 
 struct win {
     int used, kind, minimized;
@@ -118,6 +125,23 @@ static void put_str(int col, int row, const char *s, uint32_t fg,
 {
     for (int i = 0; i < maxlen && s[i]; i++)
         put(col + i, row, s[i], fg, bg);
+}
+
+/* blit an RGB32 image at pixel (px,py), clipped to the current cell
+ * clip rectangle (console_blit_rgb32 itself only clips to the screen) */
+static void blit_clipped(const uint32_t *src, int w, int h, int stride,
+                         int px, int py)
+{
+    int cx0 = cclip_x0 * 8, cy0 = cclip_y0 * 16;
+    int cx1 = (cclip_x1 + 1) * 8, cy1 = (cclip_y1 + 1) * 16;
+    int x0 = px < cx0 ? cx0 : px;
+    int y0 = py < cy0 ? cy0 : py;
+    int x1 = px + w > cx1 ? cx1 : px + w;
+    int y1 = py + h > cy1 ? cy1 : py + h;
+    if (x0 >= x1 || y0 >= y1)
+        return;
+    console_blit_rgb32(src + (size_t)(y0 - py) * (size_t)stride + (x0 - px),
+                       x1 - x0, y1 - y0, stride, x0, y0);
 }
 
 /* ── wallpaper ──────────────────────────────────────────────────────── */
@@ -208,6 +232,10 @@ static struct win *win_new(int kind, const char *title)
     w->minimized = 0;
     w->w = 58;
     w->h = 26;
+    if (kind == WK_GEARS) {
+        w->w = GEARS_W;
+        w->h = GEARS_H;
+    }
     /* cascade */
     w->x = 8 + (nwins - 1) * 3;
     w->y = 2 + (nwins - 1) * 2;
@@ -351,6 +379,15 @@ static void draw_window(int i)
         fill(bx0, y1 - 1, bx1, y1 - 1, COL_FRAME);
         put_str(bx0 + 1, y1 - 1, status, COL_DIM, COL_FRAME,
                 bx1 - bx0 - 1);
+    } else if (w->kind == WK_GEARS) {
+        /* the TinyGL frame is a pixel image, not cells: blit it into
+         * the body interior (still clipped to the repaint region) */
+        const uint32_t *pix = gears_pixels();
+        int pw = (x1 - x0 - 1) * 8, ph = (y1 - y0 - 1) * 16;
+        if (pix && pw == gears_width() && ph == gears_height())
+            blit_clipped(pix, pw, ph, pw, (x0 + 1) * 8, (y0 + 1) * 16);
+        else
+            fill(bx0, y0 + 1, bx1, y1 - 1, COL_PANEL);
     } else {
         const char *const *lines;
         int n;
@@ -428,9 +465,10 @@ static void draw_taskbar(void)
 }
 
 static const char *const menu_items[] = {
-    "Terminal", "Files", "Browser", "About", "Reboot", "Shutdown"
+    "Terminal", "Files", "Browser", "GLGears", "About",
+    "Reboot", "Shutdown"
 };
-#define NMENU 6
+#define NMENU 7
 
 static void draw_menu(void)
 {
@@ -539,6 +577,24 @@ static void open_files(void)
     win_new(WK_FILES, "Files");
 }
 
+/* timestamp of the last rendered GLGears frame (animation throttle) */
+static unsigned long long gears_last_ms;
+
+static void open_gears(void)
+{
+    for (int i = 0; i < nwins; i++)
+        if (wins[i].kind == WK_GEARS) {
+            wins[i].minimized = 0;
+            win_raise(i);
+            return;
+        }
+    if (gears_init(GEARS_PW, GEARS_PH) < 0)
+        return;
+    gears_render(0.0f);
+    gears_last_ms = timer_ms();
+    win_new(WK_GEARS, "GLGears");
+}
+
 static void menu_action(int k)
 {
     switch (k) {
@@ -561,6 +617,9 @@ static void menu_action(int k)
         win_new(WK_BROWSER, "Browser");
         break;
     case 3:
+        open_gears();
+        break;
+    case 4:
         for (int i = 0; i < nwins; i++)
             if (wins[i].kind == WK_ABOUT) {
                 wins[i].minimized = 0;
@@ -569,11 +628,11 @@ static void menu_action(int k)
             }
         win_new(WK_ABOUT, "About KelpOS");
         break;
-    case 4:
+    case 5:
         console_cursor_hide();
         cmd_reboot(0, 0); /* noreturn */
         break;
-    case 5:
+    case 6:
         console_cursor_hide();
         cmd_shutdown(0, 0); /* noreturn */
         break;
@@ -850,6 +909,27 @@ void desktop_run(void)
         /* full repaint only on real state changes */
         if (screen_dirty)
             draw_screen();
+
+        /* GLGears: animate the visible gears window. Only the window
+         * interior is repainted (pixel blit), throttled to ~25 fps so
+         * the software renderer does not starve input. */
+        int gi = -1;
+        for (int i = nwins - 1; i >= 0; i--)
+            if (wins[i].kind == WK_GEARS && !wins[i].minimized) {
+                gi = i;
+                break;
+            }
+        unsigned long long now = timer_ms();
+        if (gi >= 0 && gears_width() > 0 && now - gears_last_ms >= 40) {
+            struct win *gw = &wins[gi];
+            gears_last_ms = now;
+            gears_render((float)now / 1000.0f);
+            console_cursor_hide();
+            console_blit_rgb32(gears_pixels(), gears_width(),
+                               gears_height(), gears_width(),
+                               (gw->x + 1) * 8, (gw->y + 1) * 16);
+            console_cursor_show(mouse_x(), mouse_y());
+        }
 
         __asm__ volatile("hlt");
     }

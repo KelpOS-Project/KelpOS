@@ -31,6 +31,9 @@
 - [x] kelpinstall in C: real install by default, ANSI TUI,
       device + package selection, sfdisk/mkfs.vfat/limine bios-install
 - [x] Remade boot menu wallpaper (v0.4.0 composition)
+- [x] TinyGL-compatible OpenGL 1.x subset (matrices, immediate mode,
+      z-buffered Gouraud/flat triangles, SSE-enabled renderer) and the
+      GLGears desktop app (320x240 window, animated at ~25 fps)
 
 ## M3 — Memory management
 - [ ] PMM (free-list/bitmap instead of bump)
@@ -50,7 +53,7 @@
 - [ ] TTY as an abstraction
 
 ## M6 — Graphics & more
-- [ ] Window manager basics on the desktop
+- [ ] TinyGL extensions: textures, lighting, display lists, alpha blending
 - [ ] Network stack (TCP/IP) — then the Browser app goes live
 - [ ] Grow the Rust share (drivers in Rust)
 
