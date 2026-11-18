@@ -37,14 +37,25 @@ KCFLAGS_BASE := -std=c17 -ffreestanding -fno-builtin -fno-stack-protector \
 # The kernel proper stays -mno-sse: interrupt handlers never touch XMM.
 KCFLAGS := $(KCFLAGS_BASE) -mno-mmx -mno-sse -mno-sse2
 
+GFXINCLUDES := -Ikernel/gfx -Ikernel/gfx/tinygl/include -Ikernel/gfx/tinygl/src \
+               -Ikernel/gfx/compat -Ikernel/gfx/stb -Ikernel/gfx/apps
+
 # The TinyGL renderer is the one SSE-enabled part (x86_64 can only
 # return floats in XMM registers). The FPU/SSE is enabled in kmain().
-GFXFLAGS := $(KCFLAGS_BASE) -msse2 -mfpmath=sse -mno-avx
+# The vendored TinyGL/GLU code is not clean under -Wextra, so its
+# harmless warnings are suppressed here instead of touching upstream.
+GFXFLAGS := $(KCFLAGS_BASE) $(GFXINCLUDES) -msse2 -mfpmath=sse -mno-avx \
+            -Wno-unused-parameter -Wno-sign-compare \
+            -Wno-implicit-fallthrough
 
 KSRC := $(wildcard kernel/*.c) $(wildcard kernel/bin/*.c) \
         $(wildcard drivers/*.c) $(wildcard memory/*.c) $(wildcard fs/*.c) \
         $(wildcard klibc/src/*.c)
-GFXSRC := $(wildcard kernel/gfx/*.c)
+GFXSRC := $(wildcard kernel/gfx/*.c) \
+          $(wildcard kernel/gfx/compat/*.c) \
+          $(wildcard kernel/gfx/tinygl/src/*.c) \
+          $(wildcard kernel/gfx/apps/*.c) \
+          $(wildcard kernel/gfx/stb/*.c)
 KOBJ := $(OBJDIR)/kernel/boot.o $(patsubst %.c,$(OBJDIR)/%.o,$(KSRC)) \
         $(patsubst %.c,$(OBJDIR)/%.o,$(GFXSRC))
 

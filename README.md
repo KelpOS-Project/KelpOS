@@ -10,8 +10,10 @@ It boots via the **Limine Boot Protocol**.
 mouse driver with IRQ12: overlapping windows, title bars, dragging,
 start menu, taskbar with a live RTC clock, flicker-free dirty-region
 redraws and the boot wallpaper as an image on the desktop), a
-**TinyGL-compatible OpenGL 1.x subset** with the classic **GLGears**
-demo as a desktop app, `kelpinstall` rewritten in
+**port of TinyGL 0.4 + GLU** (ska80 fork: textures, lighting, display
+lists, vertex arrays, selection) with the upstream **GLGears** and
+**Texobj** demos as desktop apps, **stb_image** for wallpaper decoding
+(PNG/JPEG/GIF/TGA/BMP), `kelpinstall` rewritten in
 **C** (real install by default, ANSI TUI, installed as a real command), the package manager is now
 **`kpm` with install/uninstall** (persisted to `/etc/kpm/installed`),
 more Unix commands (`rm touch wc head tail grep uname date env`), and
@@ -44,8 +46,11 @@ KelpOS-main/
 │   ├── timer.c/h           PIT ticker (100 Hz)
 │   ├── panic.c/h           Kernel panic
 │   ├── gfx/
-│   │   ├── tgl.c/h         TinyGL-compatible OpenGL 1.x software renderer
-│   │   └── gears.c/h       GLGears demo (rotating gears desktop app)
+│   │   ├── tinygl/         Vendored TinyGL 0.4 + GLU (MIT, PORTING.md)
+│   │   ├── apps/           GLGears and Texobj desktop apps (upstream demos)
+│   │   ├── tgl_surface.c/h ZBuffer -> RGB32 window surface for the WM
+│   │   ├── stb/            Vendored stb_image (public domain, README.md)
+│   │   └── image.c/h       image_load_rgb32() wallpaper decoder
 │   └── bin/                Built-in commands (help, echo, uptime, ...)
 │       ├── fs.c            "fs" package table (ls pwd cd mkdir tree cat rm touch wc head tail grep)
 │       ├── adduser.c       "users" package (adduser groupmod whoami id doas)
@@ -140,6 +145,27 @@ The Limine menu (with wallpaper) offers:
 
 - **KelpOS** — normal boot: banner + shell
 - **KelpOS (Silent Boot)** — no banner, straight into the desktop
+
+## Graphics
+
+The renderer is a **vendored port of TinyGL 0.4** (Fabrice Bellard,
+maintained fork by ska80) plus its **GLU** subset — not a home-grown
+subset. The platform layer `kernel/gfx/tgl_surface.c` owns one
+`ZBuffer` per window and converts finished frames to the desktop's
+packed `0xAARRGGBB` format. Two upstream demos run as desktop apps:
+
+- **GLGears** — the classic lit, rotating red/green/blue gears
+- **Texobj** — the upstream texture demo (texture mapping + swapping)
+
+Both open a 320x240 interior window, animate at ~25 fps while they are
+the topmost window, and support dragging, minimizing and closing like
+the other windows. The vendored sources keep their MIT license; see
+[`kernel/gfx/tinygl/PORTING.md`](kernel/gfx/tinygl/PORTING.md) for the
+upstream commit and every KelpOS-specific change.
+
+Wallpapers are decoded by **stb_image** (`kernel/gfx/stb/`), so the
+boot module may be BMP, PNG, JPEG, GIF or TGA (see
+[`kernel/gfx/stb/README.md`](kernel/gfx/stb/README.md)).
 
 ## Installer
 

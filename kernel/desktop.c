@@ -28,7 +28,9 @@
 #include "shell.h"
 #include "ramfs.h"
 #include "bin/commands.h"
-#include "gfx/gears.h"
+#include "gfx/apps/glgears.h"
+#include "gfx/apps/gltexobj.h"
+#include "gfx/image.h"
 
 /* ── palette ────────────────────────────────────────────────────────── */
 #define COL_WALL0   0x14264bu  /* wallpaper diagonal stripes */
@@ -51,13 +53,13 @@
 #define COL_WHITE   0xf2f5f9u
 
 #define MAXWINS 8
-enum { WK_FILES, WK_BROWSER, WK_GEARS, WK_ABOUT };
+enum { WK_FILES, WK_BROWSER, WK_GEARS, WK_TEXTOBJ, WK_ABOUT };
 
-/* GLGears window: 42x17 cells -> 320x240 pixel interior */
-#define GEARS_W 42
-#define GEARS_H 17
-#define GEARS_PW ((GEARS_W - 2) * 8)
-#define GEARS_PH ((GEARS_H - 2) * 16)
+/* GL windows: 42x17 cells -> 320x240 pixel interior */
+#define GL_WIN_W 42
+#define GL_WIN_H 17
+#define GL_PIX_W ((GL_WIN_W - 2) * 8)
+#define GL_PIX_H ((GL_WIN_H - 2) * 16)
 
 struct win {
     int used, kind, minimized;
@@ -147,57 +149,27 @@ static void blit_clipped(const uint32_t *src, int w, int h, int stride,
 /* ── wallpaper ──────────────────────────────────────────────────────── */
 
 /* the boot module wallpaper.bmp (same image as the Limine boot menu),
- * parsed once as an uncompressed 24-bit BMP into an RGB32 cache so a
- * repaint is a plain blit and single regions can be restored cheaply */
+ * decoded once by stb_image into an RGB32 cache so a repaint is a plain
+ * blit and single regions can be restored cheaply. stb_image also
+ * accepts PNG/JPEG/GIF/TGA, so the boot module can change format
+ * without touching the desktop. */
 static uint32_t *wall_pix;
 static int wall_w, wall_h;
-
-static uint32_t le32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
-           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-}
-
-static uint16_t le16(const uint8_t *p)
-{
-    return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
-}
 
 extern const void *boot_module(const char *needle, size_t *size);
 
 static void wallpaper_init(void)
 {
     size_t sz = 0;
-    const uint8_t *m = boot_module("wallpaper.bmp", &sz);
-    if (!m || sz < 54 || m[0] != 'B' || m[1] != 'M')
+    const void *m = boot_module("wallpaper.bmp", &sz);
+    if (!m || !sz)
         return;
-    uint32_t off = le32(m + 10);
-    int32_t w = (int32_t)le32(m + 18);
-    int32_t h = (int32_t)le32(m + 22);
-    uint16_t bpp = le16(m + 28);
-    if (bpp != 24 || w <= 0 || h == 0)
-        return;
-    int ah = h < 0 ? -h : h;
-    size_t pitch = ((size_t)w * 3 + 3) & ~(size_t)3;
-    if ((size_t)off + pitch * (size_t)ah > sz)
-        return;
-    if ((uint64_t)w * (uint64_t)ah * 4u > (64u << 20))
-        return; /* refuse absurd sizes */
-    wall_pix = malloc((size_t)w * (size_t)ah * 4u);
-    if (!wall_pix)
-        return;
-    const uint8_t *pix = m + off;
-    for (int y = 0; y < ah; y++) {
-        const uint8_t *row = pix + (size_t)(h > 0 ? ah - 1 - y : y) * pitch;
-        uint32_t *dst = wall_pix + (size_t)y * (size_t)w;
-        for (int x = 0; x < w; x++) {
-            const uint8_t *p = row + (size_t)x * 3;
-            dst[x] = 0xFF000000u | ((uint32_t)p[2] << 16) |
-                     ((uint32_t)p[1] << 8) | (uint32_t)p[0];
-        }
-    }
-    wall_w = w;
-    wall_h = ah;
+    image_rgb32 img;
+    if (image_load_rgb32(m, sz, &img) < 0)
+        return; /* fall back to the diagonal pattern */
+    wall_pix = img.pixels;
+    wall_w = img.w;
+    wall_h = img.h;
 }
 
 /* paint the wallpaper for a cell rectangle */
@@ -232,9 +204,9 @@ static struct win *win_new(int kind, const char *title)
     w->minimized = 0;
     w->w = 58;
     w->h = 26;
-    if (kind == WK_GEARS) {
-        w->w = GEARS_W;
-        w->h = GEARS_H;
+    if (kind == WK_GEARS || kind == WK_TEXTOBJ) {
+        w->w = GL_WIN_W;
+        w->h = GL_WIN_H;
     }
     /* cascade */
     w->x = 8 + (nwins - 1) * 3;
@@ -379,12 +351,15 @@ static void draw_window(int i)
         fill(bx0, y1 - 1, bx1, y1 - 1, COL_FRAME);
         put_str(bx0 + 1, y1 - 1, status, COL_DIM, COL_FRAME,
                 bx1 - bx0 - 1);
-    } else if (w->kind == WK_GEARS) {
+    } else if (w->kind == WK_GEARS || w->kind == WK_TEXTOBJ) {
         /* the TinyGL frame is a pixel image, not cells: blit it into
          * the body interior (still clipped to the repaint region) */
-        const uint32_t *pix = gears_pixels();
+        const uint32_t *pix = w->kind == WK_GEARS ? glgears_pixels()
+                                                  : gltexobj_pixels();
         int pw = (x1 - x0 - 1) * 8, ph = (y1 - y0 - 1) * 16;
-        if (pix && pw == gears_width() && ph == gears_height())
+        int aw = w->kind == WK_GEARS ? glgears_width() : gltexobj_width();
+        int ah = w->kind == WK_GEARS ? glgears_height() : gltexobj_height();
+        if (pix && pw == aw && ph == ah)
             blit_clipped(pix, pw, ph, pw, (x0 + 1) * 8, (y0 + 1) * 16);
         else
             fill(bx0, y0 + 1, bx1, y1 - 1, COL_PANEL);
@@ -465,10 +440,10 @@ static void draw_taskbar(void)
 }
 
 static const char *const menu_items[] = {
-    "Terminal", "Files", "Browser", "GLGears", "About",
+    "Terminal", "Files", "Browser", "GLGears", "GLTexobj", "About",
     "Reboot", "Shutdown"
 };
-#define NMENU 7
+#define NMENU 8
 
 static void draw_menu(void)
 {
@@ -577,8 +552,8 @@ static void open_files(void)
     win_new(WK_FILES, "Files");
 }
 
-/* timestamp of the last rendered GLGears frame (animation throttle) */
-static unsigned long long gears_last_ms;
+/* timestamp of the last rendered GL frame (animation throttle) */
+static unsigned long long gl_last_ms;
 
 static void open_gears(void)
 {
@@ -588,11 +563,26 @@ static void open_gears(void)
             win_raise(i);
             return;
         }
-    if (gears_init(GEARS_PW, GEARS_PH) < 0)
+    if (glgears_init(GL_PIX_W, GL_PIX_H) < 0)
         return;
-    gears_render(0.0f);
-    gears_last_ms = timer_ms();
+    glgears_render(0);
+    gl_last_ms = timer_ms();
     win_new(WK_GEARS, "GLGears");
+}
+
+static void open_texobj(void)
+{
+    for (int i = 0; i < nwins; i++)
+        if (wins[i].kind == WK_TEXTOBJ) {
+            wins[i].minimized = 0;
+            win_raise(i);
+            return;
+        }
+    if (gltexobj_init(GL_PIX_W, GL_PIX_H) < 0)
+        return;
+    gltexobj_render(0);
+    gl_last_ms = timer_ms();
+    win_new(WK_TEXTOBJ, "GLTexobj");
 }
 
 static void menu_action(int k)
@@ -620,6 +610,9 @@ static void menu_action(int k)
         open_gears();
         break;
     case 4:
+        open_texobj();
+        break;
+    case 5:
         for (int i = 0; i < nwins; i++)
             if (wins[i].kind == WK_ABOUT) {
                 wins[i].minimized = 0;
@@ -628,11 +621,11 @@ static void menu_action(int k)
             }
         win_new(WK_ABOUT, "About KelpOS");
         break;
-    case 5:
+    case 6:
         console_cursor_hide();
         cmd_reboot(0, 0); /* noreturn */
         break;
-    case 6:
+    case 7:
         console_cursor_hide();
         cmd_shutdown(0, 0); /* noreturn */
         break;
@@ -910,24 +903,37 @@ void desktop_run(void)
         if (screen_dirty)
             draw_screen();
 
-        /* GLGears: animate the visible gears window. Only the window
-         * interior is repainted (pixel blit), throttled to ~25 fps so
-         * the software renderer does not starve input. */
+        /* TinyGL windows: animate the topmost visible one. Only the
+         * window interior is repainted (pixel blit), throttled to
+         * ~25 fps so the software renderer does not starve input. */
         int gi = -1;
         for (int i = nwins - 1; i >= 0; i--)
-            if (wins[i].kind == WK_GEARS && !wins[i].minimized) {
+            if ((wins[i].kind == WK_GEARS || wins[i].kind == WK_TEXTOBJ) &&
+                !wins[i].minimized) {
                 gi = i;
                 break;
             }
         unsigned long long now = timer_ms();
-        if (gi >= 0 && gears_width() > 0 && now - gears_last_ms >= 40) {
+        if (gi >= 0 && now - gl_last_ms >= 40) {
             struct win *gw = &wins[gi];
-            gears_last_ms = now;
-            gears_render((float)now / 1000.0f);
+            gl_last_ms = now;
+            const uint32_t *pix;
+            int pixw, pixh;
+            if (gw->kind == WK_GEARS) {
+                glgears_render(now);
+                pix = glgears_pixels();
+                pixw = glgears_width();
+                pixh = glgears_height();
+            } else {
+                gltexobj_render(now);
+                pix = gltexobj_pixels();
+                pixw = gltexobj_width();
+                pixh = gltexobj_height();
+            }
             console_cursor_hide();
-            console_blit_rgb32(gears_pixels(), gears_width(),
-                               gears_height(), gears_width(),
-                               (gw->x + 1) * 8, (gw->y + 1) * 16);
+            if (pix && pixw > 0 && pixh > 0)
+                console_blit_rgb32(pix, pixw, pixh, pixw,
+                                   (gw->x + 1) * 8, (gw->y + 1) * 16);
             console_cursor_show(mouse_x(), mouse_y());
         }
 

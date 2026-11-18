@@ -4,11 +4,23 @@
 #include <stdbool.h>
 #include "stdlib.h"
 #include "ctype.h"
+#include "string.h"
 #include "heap.h"
 
 void *malloc(size_t n)
 {
     return kmalloc(n);
+}
+
+void *calloc(size_t n, size_t size)
+{
+    if (size && n > (size_t)-1 / size)
+        return NULL;
+    size_t total = n * size;
+    void *p = kmalloc(total);
+    if (p)
+        memset(p, 0, total);
+    return p;
 }
 
 void free(void *p)

@@ -6,7 +6,7 @@ section .bss
 align 16
 global boot_stack_bottom
 boot_stack_bottom:
-    resb 16384
+    resb 65536
 global boot_stack_top
 boot_stack_top:
 
