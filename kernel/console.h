@@ -30,21 +30,22 @@ void console_draw_cell(unsigned col, unsigned row, char ch,
 void console_fill(unsigned col0, unsigned row0,
                   unsigned col1, unsigned row1, uint32_t bg);
 
-/* blit a 24-bit (BGR) image over the whole framebuffer (desktop
- * wallpaper); pix points at the first pixel row, pitch is the byte
- * width of one source row, flip_y for bottom-up BMP scanlines */
-void console_draw_image24(const uint8_t *pix, int iw, int ih, int pitch,
-                          int flip_y);
+/* blit an RGB32 image (0xFFRRGGBB, stride in pixels) into the
+ * framebuffer at pixel (dx,dy), clipped to the screen */
+void console_blit_rgb32(const uint32_t *src, int w, int h, int stride,
+                        int dx, int dy);
 
 /* colors for subsequent kputc/kprintf output on the fb terminal */
 void console_set_colors(uint32_t fg, uint32_t bg);
 
-/* mouse cursor overlay (pixel position); show() saves the covered
- * pixels and draws the arrow, hide() restores them */
+/* mouse cursor overlay (pixel position). The overlay is a saved-pixel
+ * patch: hide() restores exactly what was drawn over, show() restores
+ * any previous arrow and draws a fresh one. Every screen repaint MUST
+ * be bracketed by cursor_hide() ... cursor_show(x,y) — painting while
+ * the arrow is visible burns the arrow pixels into the saved patch. */
 void console_cursor_show(int px, int py);
 void console_cursor_hide(void);
 void console_cursor_move(int px, int py);
-void console_cursor_repaint(void);
 
 /* default scheme */
 #define KELP_FG 0xd8d8d8u

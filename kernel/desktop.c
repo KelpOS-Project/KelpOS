@@ -13,6 +13,7 @@
  */
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -71,9 +72,45 @@ static bool menu_visible;
 static int cell_x(void) { return (int)mouse_x() / 8; }
 static int cell_y(void) { return (int)mouse_y() / 16; }
 
+/* clip rectangle (cells, inclusive): every cell write is limited to it,
+ * so the desktop can repaint just the region that actually changed
+ * (e.g. the old+new area of a window being dragged) instead of the
+ * whole screen. */
+static int cclip_x0, cclip_y0, cclip_x1 = 4095, cclip_y1 = 4095;
+
+static void set_clip(int x0, int y0, int x1, int y1)
+{
+    cclip_x0 = x0;
+    cclip_y0 = y0;
+    cclip_x1 = x1;
+    cclip_y1 = y1;
+}
+
+static void clip_full(void)
+{
+    set_clip(0, 0, (int)console_cols() - 1, (int)console_rows() - 1);
+}
+
 static void put(int col, int row, char ch, uint32_t fg, uint32_t bg)
 {
+    if (col < cclip_x0 || col > cclip_x1 || row < cclip_y0 || row > cclip_y1)
+        return;
     console_draw_cell((unsigned)col, (unsigned)row, ch, fg, bg);
+}
+
+static void fill(int x0, int y0, int x1, int y1, uint32_t bg)
+{
+    if (x0 < cclip_x0)
+        x0 = cclip_x0;
+    if (y0 < cclip_y0)
+        y0 = cclip_y0;
+    if (x1 > cclip_x1)
+        x1 = cclip_x1;
+    if (y1 > cclip_y1)
+        y1 = cclip_y1;
+    if (x0 > x1 || y0 > y1)
+        return;
+    console_fill((unsigned)x0, (unsigned)y0, (unsigned)x1, (unsigned)y1, bg);
 }
 
 static void put_str(int col, int row, const char *s, uint32_t fg,
@@ -86,10 +123,10 @@ static void put_str(int col, int row, const char *s, uint32_t fg,
 /* ── wallpaper ──────────────────────────────────────────────────────── */
 
 /* the boot module wallpaper.bmp (same image as the Limine boot menu),
- * parsed as an uncompressed 24-bit BMP */
-static const uint8_t *wall_pix;
-static int wall_w, wall_h, wall_pitch;
-static int wall_flip; /* positive BMP height = scanlines bottom-up */
+ * parsed once as an uncompressed 24-bit BMP into an RGB32 cache so a
+ * repaint is a plain blit and single regions can be restored cheaply */
+static uint32_t *wall_pix;
+static int wall_w, wall_h;
 
 static uint32_t le32(const uint8_t *p)
 {
@@ -120,29 +157,42 @@ static void wallpaper_init(void)
     size_t pitch = ((size_t)w * 3 + 3) & ~(size_t)3;
     if ((size_t)off + pitch * (size_t)ah > sz)
         return;
-    wall_pix = m + off;
+    if ((uint64_t)w * (uint64_t)ah * 4u > (64u << 20))
+        return; /* refuse absurd sizes */
+    wall_pix = malloc((size_t)w * (size_t)ah * 4u);
+    if (!wall_pix)
+        return;
+    const uint8_t *pix = m + off;
+    for (int y = 0; y < ah; y++) {
+        const uint8_t *row = pix + (size_t)(h > 0 ? ah - 1 - y : y) * pitch;
+        uint32_t *dst = wall_pix + (size_t)y * (size_t)w;
+        for (int x = 0; x < w; x++) {
+            const uint8_t *p = row + (size_t)x * 3;
+            dst[x] = 0xFF000000u | ((uint32_t)p[2] << 16) |
+                     ((uint32_t)p[1] << 8) | (uint32_t)p[0];
+        }
+    }
     wall_w = w;
     wall_h = ah;
-    wall_pitch = (int)pitch;
-    wall_flip = h > 0;
 }
 
-static void draw_wallpaper(void)
+/* paint the wallpaper for a cell rectangle */
+static void wall_blit(int cx0, int cy0, int cx1, int cy1)
 {
-    if (wall_pix) {
-        console_draw_image24(wall_pix, wall_w, wall_h, wall_pitch,
-                             wall_flip);
+    int px0 = cx0 * 8, py0 = cy0 * 16;
+    int px1 = (cx1 + 1) * 8, py1 = (cy1 + 1) * 16;
+    if (!wall_pix || wall_w < px1 || wall_h < py1) {
+        /* fallback: the diagonal two-tone pattern */
+        static const uint32_t band[4] = {
+            COL_WALL0, COL_WALL1, COL_WALL2, COL_WALL3
+        };
+        for (int r = cy0; r <= cy1; r++)
+            for (int c = cx0; c <= cx1; c++)
+                put(c, r, ' ', COL_TEXT, band[(((c + r) / 2) % 4)]);
         return;
     }
-    /* fallback: the old diagonal two-tone pattern */
-    unsigned cols = console_cols(), rows = console_rows();
-    static const uint32_t band[4] = {
-        COL_WALL0, COL_WALL1, COL_WALL2, COL_WALL3
-    };
-    for (unsigned r = 0; r < rows; r++)
-        for (unsigned c = 0; c < cols; c++)
-            console_draw_cell(c, r, ' ', COL_TEXT,
-                              band[(((c + r) / 2) % 4)]);
+    console_blit_rgb32(wall_pix + (size_t)py0 * (size_t)wall_w + px0,
+                       px1 - px0, py1 - py0, wall_w, px0, py0);
 }
 
 /* ── windows ────────────────────────────────────────────────────────── */
@@ -205,7 +255,7 @@ static int win_at(int cx, int cy)
 
 static void frame(int x0, int y0, int x1, int y1, uint32_t col)
 {
-    console_fill(x0, y0, x1, y1, col);
+    fill(x0, y0, x1, y1, col);
 }
 
 static void draw_window(int i)
@@ -222,10 +272,10 @@ static void draw_window(int i)
     /* frame + body */
     frame(x0, y0, x1, y1, COL_FRAME);
     if (y1 > y0 && x1 > x0)
-        console_fill(x0 + 1, y0 + 1, x1 - 1, y1 - 1, COL_PANEL);
+        fill(x0 + 1, y0 + 1, x1 - 1, y1 - 1, COL_PANEL);
 
     /* title bar */
-    console_fill(x0, y0, x1, y0, focus ? COL_TITLE : COL_TITLE_D);
+    fill(x0, y0, x1, y0, focus ? COL_TITLE : COL_TITLE_D);
     put_str(x0 + 2, y0, w->title, focus ? COL_WHITE : COL_DIM,
             focus ? COL_TITLE : COL_TITLE_D, w->w - 6);
 
@@ -268,7 +318,7 @@ static void draw_window(int i)
                     len++;
                 memcpy(line, data + pos, len);
                 line[len] = 0;
-                console_fill(bx0, row, bx1, row, COL_PANEL);
+                fill(bx0, row, bx1, row, COL_PANEL);
                 put_str(bx0 + 1, row, line, COL_TEXT, COL_PANEL,
                         bx1 - bx0 - 1);
                 pos += (int)len;
@@ -279,7 +329,7 @@ static void draw_window(int i)
         } else {
             for (size_t k = 0; k < n && row <= max_row; k++, row++) {
                 bool dir = ramfs_is_dir(kids[k]);
-                console_fill(bx0, row, bx1, row, COL_PANEL);
+                fill(bx0, row, bx1, row, COL_PANEL);
                 char line[80];
                 snprintf(line, sizeof(line), " %s%s",
                          ramfs_node_name(kids[k]), dir ? "/" : "");
@@ -288,7 +338,7 @@ static void draw_window(int i)
             }
         }
         for (; row <= max_row; row++)
-            console_fill(bx0, row, bx1, row, COL_PANEL);
+            fill(bx0, row, bx1, row, COL_PANEL);
 
         /* status row */
         char status[64];
@@ -298,7 +348,7 @@ static void draw_window(int i)
         else
             snprintf(status, sizeof(status), "%llu items - KelpOS Files",
                      (unsigned long long)n);
-        console_fill(bx0, y1 - 1, bx1, y1 - 1, COL_FRAME);
+        fill(bx0, y1 - 1, bx1, y1 - 1, COL_FRAME);
         put_str(bx0 + 1, y1 - 1, status, COL_DIM, COL_FRAME,
                 bx1 - bx0 - 1);
     } else {
@@ -334,7 +384,7 @@ static void draw_window(int i)
         }
         int row = y0 + 2;
         for (int k = 0; k < n && row < y1 - 1; k++, row++) {
-            console_fill(bx0, row, bx1, row, COL_PANEL);
+            fill(bx0, row, bx1, row, COL_PANEL);
             put_str(bx0 + 1, row, lines[k], COL_TEXT, COL_PANEL,
                     bx1 - bx0 - 1);
         }
@@ -347,11 +397,11 @@ static void draw_taskbar(void)
 {
     unsigned cols = console_cols(), rows = console_rows();
     int bar = (int)rows - 1;
-    console_fill(0, bar, (int)cols - 1, bar, COL_TASKBAR);
+    fill(0, bar, (int)cols - 1, bar, COL_TASKBAR);
 
     /* start button */
     bool hov = cell_y() == bar && cell_x() < 9;
-    console_fill(0, bar, 8, bar, hov ? COL_START_H : COL_START);
+    fill(0, bar, 8, bar, hov ? COL_START_H : COL_START);
     put_str(1, bar, "KelpOS", COL_WHITE, hov ? COL_START_H : COL_START, 8);
 
     /* one button per open window */
@@ -362,7 +412,7 @@ static void draw_taskbar(void)
         bool h = cell_y() == bar && cell_x() >= bx && cell_x() < bx + bw;
         uint32_t bg = i == win_focused() ? COL_BTN_HOV
                                          : (h ? COL_BTN_HOV : COL_BTN);
-        console_fill(bx, bar, bx + bw - 1, bar, bg);
+        fill(bx, bar, bx + bw - 1, bar, bg);
         put(bx, bar, w->minimized ? '+' : ' ', COL_TEXT, bg);
         put_str(bx + 1, bar, w->title, COL_TEXT, bg, bw - 2);
         bx += bw;
@@ -392,20 +442,75 @@ static void draw_menu(void)
     for (int k = 0; k < NMENU; k++) {
         int row = y0 + 1 + k;
         uint32_t bg = k == menu_open ? COL_SEL : COL_PANEL;
-        console_fill(x0 + 1, row, x0 + 12, row, bg);
+        fill(x0 + 1, row, x0 + 12, row, bg);
         put_str(x0 + 2, row, menu_items[k], COL_TEXT, bg, 11);
     }
 }
 
-static void draw_screen(void)
+static void draw_scene(void)
 {
-    draw_wallpaper();
+    unsigned cols = console_cols(), rows = console_rows();
+    wall_blit(0, 0, (int)cols - 1, (int)rows - 1);
     for (int i = 0; i < nwins; i++)
         if (!wins[i].minimized)
             draw_window(i);
     draw_menu();
     draw_taskbar();
-    console_cursor_repaint();
+}
+
+/* full repaint: the cursor must be off-screen while painting, or its
+ * arrow pixels would end up in the saved patch (ghost cursor) */
+static void draw_screen(void)
+{
+    console_cursor_hide();
+    clip_full();
+    draw_scene();
+    console_cursor_show(mouse_x(), mouse_y());
+}
+
+/* repaint only a cell rectangle: wallpaper slice, every window that
+ * intersects it (z-order), the menu and — when touched — the taskbar.
+ * Used for window dragging, so the rest of the screen stays untouched. */
+static void redraw_region(int x0, int y0, int x1, int y1)
+{
+    unsigned cols = console_cols(), rows = console_rows();
+    if (x0 < 0)
+        x0 = 0;
+    if (y0 < 0)
+        y0 = 0;
+    if (x1 > (int)cols - 1)
+        x1 = (int)cols - 1;
+    if (y1 > (int)rows - 1)
+        y1 = (int)rows - 1;
+    if (x0 > x1 || y0 > y1)
+        return;
+
+    console_cursor_hide();
+    set_clip(x0, y0, x1, y1);
+    wall_blit(x0, y0, x1, y1);
+    for (int i = 0; i < nwins; i++) {
+        struct win *w = &wins[i];
+        if (w->minimized)
+            continue;
+        if (w->x > x1 || w->x + w->w - 1 < x0 ||
+            w->y > y1 || w->y + w->h - 1 < y0)
+            continue;
+        draw_window(i);
+    }
+    draw_menu();
+    if (y1 >= (int)rows - 1)
+        draw_taskbar();
+    clip_full();
+    console_cursor_show(mouse_x(), mouse_y());
+}
+
+/* taskbar-only repaint (clock tick, hover highlight) */
+static void redraw_taskbar(void)
+{
+    console_cursor_hide();
+    clip_full();
+    draw_taskbar();
+    console_cursor_show(mouse_x(), mouse_y());
 }
 
 /* ── actions ────────────────────────────────────────────────────────── */
@@ -622,9 +727,13 @@ static void poll_drag(bool moved)
     if (ny > (int)rows - 3)
         ny = (int)rows - 3;
     if (nx != w->x || ny != w->y) {
+        int ox = w->x, oy = w->y;
         w->x = nx;
         w->y = ny;
-        screen_dirty = true;
+        /* repaint only the union of the old and new window rect */
+        redraw_region(ox < nx ? ox : nx, oy < ny ? oy : ny,
+                      (ox > nx ? ox : nx) + w->w - 1,
+                      (oy > ny ? oy : ny) + w->h - 1);
     }
 }
 
@@ -728,16 +837,14 @@ void desktop_run(void)
         int hover = hover_sig();
         if (hover != last_hover) {
             last_hover = hover;
-            draw_taskbar();
-            console_cursor_repaint();
+            redraw_taskbar();
         }
 
         /* clock tick: redraw the taskbar when the second changes */
         unsigned long long sec = timer_ms() / 1000;
         if (sec != last_sec) {
             last_sec = sec;
-            draw_taskbar();
-            console_cursor_repaint();
+            redraw_taskbar();
         }
 
         /* full repaint only on real state changes */

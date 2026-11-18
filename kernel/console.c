@@ -111,27 +111,24 @@ void console_set_colors(uint32_t fgc, uint32_t bgc)
     cur_bg = bgc;
 }
 
-/* blit a 24-bit (BGR) image over the whole framebuffer, scaled with
- * nearest-neighbor sampling. flip_y: BMP scanlines are usually stored
- * bottom-up (positive header height). Used for the desktop wallpaper. */
-void console_draw_image24(const uint8_t *pix, int iw, int ih, int pitch,
-                          int flip_y)
+/* blit an RGB32 image into the framebuffer, clipped to the screen */
+void console_blit_rgb32(const uint32_t *src, int w, int h, int stride,
+                        int dx, int dy)
 {
-    if (!fb.active || !pix || iw <= 0 || ih <= 0 || pitch < iw * 3)
+    if (!fb.active || !src || w <= 0 || h <= 0 || stride < w)
         return;
-    for (uint64_t y = 0; y < fb.height; y++) {
-        int sy = (int)((y * (uint64_t)ih) / fb.height);
-        if (flip_y)
-            sy = ih - 1 - sy;
-        const uint8_t *row = pix + (size_t)sy * (size_t)pitch;
-        uint64_t dst = y * fb.stride;
-        for (uint64_t x = 0; x < fb.width; x++) {
-            int sx = (iw == (int)fb.width) ? (int)x
-                     : (int)((x * (uint64_t)iw) / fb.width);
-            const uint8_t *p = row + (size_t)sx * 3;
-            fb.px[dst + x] = 0xFF000000u | ((uint32_t)p[2] << 16) |
-                             ((uint32_t)p[1] << 8) | (uint32_t)p[0];
-        }
+    for (int r = 0; r < h; r++) {
+        int64_t y = (int64_t)dy + r;
+        if (y < 0 || (uint64_t)y >= fb.height)
+            continue;
+        const uint32_t *srow = src + (size_t)r * (size_t)stride;
+        int c0 = 0, c1 = w - 1;
+        if (dx < 0)
+            c0 = -dx;
+        if (dx + w > (int)fb.width)
+            c1 = (int)fb.width - 1 - dx;
+        for (int c = c0; c <= c1; c++)
+            fb.px[(uint64_t)y * fb.stride + (uint64_t)(dx + c)] = srow[c];
     }
 }
 
@@ -380,15 +377,6 @@ void console_cursor_move(int px, int py)
         return;
     cur_restore();
     cur_draw(px, py);
-}
-
-/* redraw the cursor over freshly painted content (after a screen
- * repaint the saved patch is stale, so draw without restoring) */
-void console_cursor_repaint(void)
-{
-    if (!fb.active || !mcur.visible)
-        return;
-    cur_draw(mcur.x, mcur.y);
 }
 
 /* ── Unified output ─────────────────────────────────────────────────── */
