@@ -172,7 +172,9 @@ run: iso
 # in the shell, then `make run-installed` to start from that disk.
 run-hd: iso
 	@[ -f $(BUILD)/hd.img ] || truncate -s 64M $(BUILD)/hd.img
-	$(QEMU) -M q35 -m 2G -cdrom $(BUILD)/kelpos.iso \
+	# -boot order=d: once hd.img is bootable, boot the ISO (and not the
+	# freshly installed disk) so `kelpinstall` can be started again.
+	$(QEMU) -M q35 -m 2G -boot order=d -cdrom $(BUILD)/kelpos.iso \
 		-drive file=$(BUILD)/hd.img,format=raw,if=ide,index=0 -serial stdio
 
 run-installed:
@@ -206,7 +208,7 @@ help:
 	@echo "make kernel      — build only the kernel (build/kelpos.elf)"
 	@echo "make iso         — build the boot ISO (build/kelpos.iso)"
 	@echo "make run         — boot the ISO in QEMU (GUI window + serial)"
-	@echo "make run-hd      — boot the ISO with a blank SATA disk (for kelpinstall)"
+	@echo "make run-hd      — boot the ISO with a SATA disk (starts kelpinstall)"
 	@echo "make run-installed — boot the installed disk instead of the ISO"
 	@echo "make run-debug   — QEMU with GDB stub (port 1234)"
 	@echo "make test        — host unit tests (klibc/heap)"

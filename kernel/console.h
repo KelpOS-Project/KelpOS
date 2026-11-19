@@ -38,6 +38,11 @@ void console_blit_rgb32(const uint32_t *src, int w, int h, int stride,
 /* colors for subsequent kputc/kprintf output on the fb terminal */
 void console_set_colors(uint32_t fg, uint32_t bg);
 
+/* Temporarily stop kprintf from drawing on the framebuffer (serial
+ * output continues). Full-screen text UIs draw their own cells and use
+ * this so stray kprintf output cannot scribble over the screen. */
+void console_fb_suspend(bool on);
+
 /* mouse cursor overlay (pixel position). The overlay is a saved-pixel
  * patch: hide() restores exactly what was drawn over, show() restores
  * any previous arrow and draws a fresh one. Every screen repaint MUST

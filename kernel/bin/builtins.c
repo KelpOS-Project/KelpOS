@@ -22,7 +22,7 @@ static const struct builtin core_cmds[] = {
     { "reboot",   cmd_reboot,   "reboot the machine" },
     { "shutdown", cmd_shutdown, "QEMU shutdown (halt on real hardware)" },
     { "desktop",  cmd_desktop,  "switch to the graphical desktop" },
-    { "kelpinstall", cmd_kelpinstall, "install KelpOS to the first SATA disk" },
+    { "kelpinstall", cmd_kelpinstall, "install KelpOS to a SATA disk (text UI)" },
     { "lsblk",    cmd_lsblk,    "list block devices" },
     { "sync",     cmd_sync,     "flush disk write caches" },
     { "dd",       cmd_dd,       "copy raw blocks (if= of= bs= count=)" },

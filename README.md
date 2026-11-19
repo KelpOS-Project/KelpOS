@@ -39,6 +39,7 @@ KelpOS-main/
 │   ├── boot.S              Entry (_start), GDT reload, ISR stubs (NASM)
 │   ├── kernel.c            kmain, Limine requests, heap, fs wiring
 │   ├── console.c/h         Serial + framebuffer color-cell text terminal
+│   ├── tui.c/h             ncurses-style widgets for full-screen text UIs
 │   ├── desktop.c/h         Window-manager desktop (mouse-driven)
 │   ├── shell.c/h           Interactive shell (with cwd)
 │   ├── users.c/h           User/group database (mirrored to /etc)
@@ -185,18 +186,43 @@ boot module may be BMP, PNG, JPEG, GIF or TGA (see
 
 ## In-kernel installer
 
-The shell command **`kelpinstall`** installs the running system onto
-the **first SATA disk** (`sda`). It takes **no options, no flags and
-shows no dry run**: it immediately overwrites the first 48 MiB of that
-disk with `install.img`, a complete bootable image (MBR, active FAT16
-partition, kernel, Limine stage, wallpaper and demo disk) built by
-`scripts/geninstallimg.sh` and shipped in the ISO. Afterwards the new
-partition shows up as `sda1`, so it can be inspected in the same
-session:
+The shell command **`kelpinstall`** installs the running system onto a
+**SATA disk**. It takes **no options and no flags**; on the framebuffer
+console it opens a full-screen, menu-driven text UI in the spirit of
+Linux `make menuconfig` (implemented by `kernel/tui.c`, no ncurses:
+title bar, arrow-key menus, highlighted selections, a help line,
+buttons and a progress bar):
+
+```text
+ KelpOS Installer -----------------------------------------------------
+ KelpOS 0.4.0 - install the running system to a disk
+
+ > Target disk      sda   64 MiB
+   Install image    48 MiB
+   Partition table  MBR (fixed)
+   Filesystem       FAT16 (fixed)
+   Boot loader      Limine (fixed)
+   ------------------------------------
+   Install KelpOS
+   Exit
+
+ Disk that receives the installation (all data on it is lost).
+ Up/Down: select   Enter: choose   Esc: back
+```
+
+The target disk is chosen in its own submenu (read-only disks are
+disabled), the fixed layout options each have an explanation page, and
+`Install KelpOS` asks **one** confirmation before writing. The installer
+then overwrites the first 48 MiB of that disk with `install.img`, a
+complete bootable image (MBR, active FAT16 partition, kernel, Limine
+stage, wallpaper and demo disk) built by `scripts/geninstallimg.sh` and
+shipped in the ISO. Afterwards the new partition shows up as `sda1`, so
+it can be inspected in the same session. Machines without a framebuffer
+terminal (serial only) skip the UI and install non-interactively.
 
 ```sh
-make run-hd                 # ISO + blank 64 MiB SATA disk in QEMU
-kelpinstall                 # write the system to sda
+make run-hd                 # ISO + 64 MiB SATA disk in QEMU (CD boot first)
+kelpinstall                 # menu UI: pick the disk, Install KelpOS
 mount sda1 /mnt             # optional: look at the installed files
 diskls /mnt/boot
 umount /mnt
@@ -207,9 +233,7 @@ make run-installed          # boot that disk in QEMU
 The target disk must have at least 48 MiB. Block devices are named
 Unix-style (`sda`, `sdb`, partitions `sda1`...); `lsblk` lists them,
 `dd` copies raw blocks, `sync` flushes the write caches and
-`mount`/`umount`/`df` work on FAT volumes. **There is no confirmation
-prompt** — this is deliberate, but it means the command destroys data
-on the first SATA disk.
+`mount`/`umount`/`df` work on FAT volumes.
 
 ## Host installer
 

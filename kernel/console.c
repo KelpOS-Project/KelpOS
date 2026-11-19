@@ -43,6 +43,7 @@ static struct {
 
 static uint32_t cur_fg = KELP_FG;
 static uint32_t cur_bg = KELP_BG;
+static bool fb_suspended;
 
 unsigned console_cols(void) { return fb.active ? fb.cols : 0; }
 unsigned console_rows(void) { return fb.active ? fb.rows : 0; }
@@ -111,6 +112,15 @@ void console_set_colors(uint32_t fgc, uint32_t bgc)
     cur_bg = bgc;
 }
 
+void console_fb_suspend(bool on)
+{
+    if (!fb.active || fb_suspended == on)
+        return;
+    if (on)
+        fb_paint(fb.col, fb.row, false); /* drop the text cursor */
+    fb_suspended = on;
+}
+
 /* blit an RGB32 image into the framebuffer, clipped to the screen */
 void console_blit_rgb32(const uint32_t *src, int w, int h, int stride,
                         int dx, int dy)
@@ -170,7 +180,7 @@ static void fb_scroll(void)
 
 static void fb_putc(char c)
 {
-    if (!fb.active)
+    if (!fb.active || fb_suspended)
         return;
 
     /* remove cursor from current cell before moving */

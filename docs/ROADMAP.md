@@ -40,8 +40,9 @@
 - [x] stb_image wallpaper decoding (BMP/PNG/JPEG/GIF/TGA)
 - [x] AHCI/SATA block driver with Unix device names (sda, sda1, ...)
       and an MBR partition scanner
-- [x] In-kernel `kelpinstall`: writes the bootable install.img to the
-      first SATA disk, no flags and no dry run
+- [x] In-kernel `kelpinstall`: menu-driven full-screen text UI in the
+      style of `make menuconfig` (kernel/tui.c: menus, buttons, help
+      line, progress bar), writes install.img to the chosen SATA disk
 - [x] Unix block tools: lsblk, dd, sync, mount, umount, df
 - [x] `make run-hd` / `make run-installed` for the install round trip
 
