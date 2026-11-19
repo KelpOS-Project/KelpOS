@@ -31,6 +31,7 @@ struct fs_ops {
 
 struct vfs_fs {
     const char *mountpoint;  /* e.g. "/media/disk0" */
+    char mp[64];             /* storage for runtime mountpoints */
     struct blockdev *bd;
     const struct fs_ops *ops;
     void *ctx;

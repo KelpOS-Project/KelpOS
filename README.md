@@ -13,11 +13,14 @@ redraws and the boot wallpaper as an image on the desktop), a
 **port of TinyGL 0.4 + GLU** (ska80 fork: textures, lighting, display
 lists, vertex arrays, selection) with the upstream **GLGears** and
 **Texobj** demos as desktop apps, **stb_image** for wallpaper decoding
-(PNG/JPEG/GIF/TGA/BMP), `kelpinstall` rewritten in
-**C** (real install by default, ANSI TUI, installed as a real command), the package manager is now
-**`kpm` with install/uninstall** (persisted to `/etc/kpm/installed`),
-more Unix commands (`rm touch wc head tail grep uname date env`), and
-a remade boot menu wallpaper.
+(PNG/JPEG/GIF/TGA/BMP), a **SATA/AHCI block driver** with Unix device
+names (`sda`, `sda1`, ...) and an **in-kernel `kelpinstall`** that
+writes a bootable KelpOS image to the first hard disk, Unix block tools
+(`lsblk`, `dd`, `sync`, `mount`, `umount`, `df`), the host-side
+`kelpinstall` rewritten in **C** (real install by default, ANSI TUI),
+the package manager is now **`kpm` with install/uninstall** (persisted
+to `/etc/kpm/installed`), more Unix commands (`rm touch wc head tail
+grep uname date env`), and a remade boot menu wallpaper.
 
 ## Project structure
 
@@ -55,16 +58,21 @@ KelpOS-main/
 │       ├── fs.c            "fs" package table (ls pwd cd mkdir tree cat rm touch wc head tail grep)
 │       ├── adduser.c       "users" package (adduser groupmod whoami id doas)
 │       ├── fastfetch.c     "fastfetch" package
-│       ├── mounts.c        "diskfs" package (mounts diskls diskcat)
+│       ├── mounts.c        "diskfs" package (mounts mount umount df diskls diskcat)
+│       ├── kelpinstall.c   in-kernel installer (image -> first SATA disk)
+│       ├── blockcmd.c      lsblk, sync, dd
 │       └── pkg.c           Package manager command
 ├── drivers/
 │   ├── serial.c/h          16550 UART (COM1)
-│   └── keyboard.c/h        PS/2 keyboard (IRQ1, arrows/Esc)
-│   └── mouse.c/h           PS/2 mouse (IRQ12, stream mode, polled API)
+│   ├── keyboard.c/h        PS/2 keyboard (IRQ1, arrows/Esc)
+│   ├── mouse.c/h           PS/2 mouse (IRQ12, stream mode, polled API)
+│   ├── pci.c/h             PCI config space (class/BAR lookup)
+│   └── ahci.c/h            AHCI/SATA block driver (read/write, flush)
 ├── memory/
 │   └── heap.c/h            Bump allocator (preparation for PMM/VMM)
 ├── fs/                     Filesystem stack
 │   ├── block.c/h           Block device registry (512-byte sectors)
+│   ├── part.c/h            MBR scanner (sda1, sda2, ... wrappers)
 │   ├── ramdisk.c/h         Memory-backed block device (from boot module)
 │   ├── vfs.c/h             Mount layer + backend ops
 │   ├── fat.c/h             FAT12/16/32 + exFAT (read-only)
@@ -79,8 +87,9 @@ KelpOS-main/
 │   ├── setup-limine.sh     Downloads Limine + limine.h
 │   ├── genwallpaper.py     Generates the boot menu wallpaper
 │   ├── gendiskimg.sh       Generates the FAT16 demo disk image
+│   ├── geninstallimg.sh    Builds install.img (bootable 48 MiB HDD image)
 │   ├── pkgconf.py          Package selection (PKGS=...) for the build
-│   └── kelpinstall.c       C installer (ANSI TUI, real install is the default)
+│   └── kelpinstall.c       Host-side C installer (ANSI TUI)
 ├── docs/ROADMAP.md         Roadmap
 └── README.md               This file
 ```
@@ -117,14 +126,21 @@ always present; the optional packages are `fs`, `users`, `fastfetch`,
 - `gcc` (cross-compiler `x86_64-elf-gcc` recommended; `x86_64-linux-gnu-gcc`
   or host `gcc` also work)
 - `nasm`, `git`, `xorriso`
+- `sfdisk` (util-linux), `mkfs.vfat` (dosfstools) and `mcopy`/`mmd`
+  (mtools) — needed to build `build/install.img`, the bootable image the
+  in-kernel installer writes to a hard disk
+  (Fedora: `sudo dnf install dosfstools mtools util-linux`;
+  Debian/Ubuntu: `dosfstools mtools fdisk`)
 - `qemu-system-x86_64` for `make run` / `make test-qemu`
 - optional: `cargo` (+ nightly) for the Rust component
 
 ## Quick start
 
 ```sh
-make          # build the boot ISO, fully verbose (downloads Limine if needed)
-make run      # build the ISO and boot it in QEMU
+make              # build the boot ISO, fully verbose (downloads Limine if needed)
+make run          # boot the ISO in QEMU
+make run-hd       # boot the ISO with a blank 64 MiB SATA disk attached
+make run-installed # boot the installed disk instead of the ISO
 ```
 
 Console output runs over `serial stdio`. In addition, the framebuffer
@@ -132,12 +148,12 @@ terminal shows the shell text directly in the QEMU window (8x16 font).
 Shell commands: `help`, `echo`, `uptime`, `mem`, `crc`, `about`,
 `cowsay`, `fortune`, `kpm` (list/install/uninstall), `uname`, `date`,
 `env`, `clear`, `reboot`, `shutdown`, `desktop` (window-manager
-desktop), plus the packages `fs` (`ls pwd cd mkdir tree cat rm touch
-wc head tail grep`), `users` (`adduser groupmod whoami id doas sudo`),
-`fastfetch` and `diskfs` (`mounts diskls diskcat` — the FAT16 demo
-disk shipped as a boot module is mounted at `/media/disk0`;
-ext4/btrfs volumes are detected but read access lands with the M5
-milestone).
+desktop), `kelpinstall`, and the Unix block tools `lsblk`, `dd`, `sync`,
+plus the packages `fs` (`ls pwd cd mkdir tree cat rm touch wc head tail
+grep`), `users` (`adduser groupmod whoami id doas sudo`), `fastfetch`
+and `diskfs` (`mounts mount umount df diskls diskcat` — the FAT16 demo
+disk shipped as a boot module is mounted at `/media/disk0`; ext4/btrfs
+volumes are detected but read access lands with the M5 milestone).
 
 ### Boot entries
 
@@ -167,7 +183,35 @@ Wallpapers are decoded by **stb_image** (`kernel/gfx/stb/`), so the
 boot module may be BMP, PNG, JPEG, GIF or TGA (see
 [`kernel/gfx/stb/README.md`](kernel/gfx/stb/README.md)).
 
-## Installer
+## In-kernel installer
+
+The shell command **`kelpinstall`** installs the running system onto
+the **first SATA disk** (`sda`). It takes **no options, no flags and
+shows no dry run**: it immediately overwrites the first 48 MiB of that
+disk with `install.img`, a complete bootable image (MBR, active FAT16
+partition, kernel, Limine stage, wallpaper and demo disk) built by
+`scripts/geninstallimg.sh` and shipped in the ISO. Afterwards the new
+partition shows up as `sda1`, so it can be inspected in the same
+session:
+
+```sh
+make run-hd                 # ISO + blank 64 MiB SATA disk in QEMU
+kelpinstall                 # write the system to sda
+mount sda1 /mnt             # optional: look at the installed files
+diskls /mnt/boot
+umount /mnt
+# reboot (without the CD) -> the installed system starts from sda
+make run-installed          # boot that disk in QEMU
+```
+
+The target disk must have at least 48 MiB. Block devices are named
+Unix-style (`sda`, `sdb`, partitions `sda1`...); `lsblk` lists them,
+`dd` copies raw blocks, `sync` flushes the write caches and
+`mount`/`umount`/`df` work on FAT volumes. **There is no confirmation
+prompt** — this is deliberate, but it means the command destroys data
+on the first SATA disk.
+
+## Host installer
 
 `kelpinstall` (C, built with `make kelpinstall` → `build/kelpinstall`)
 is a **real command** — it is not meant to be run from `build/` by

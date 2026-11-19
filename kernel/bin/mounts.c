@@ -129,8 +129,67 @@ static int cmd_diskcat(int argc, char **argv)
     return 0;
 }
 
+static struct blockdev *dev_lookup(const char *name)
+{
+    if (strncmp(name, "/dev/", 5) == 0)
+        name += 5;
+    return block_find(name);
+}
+
+static int cmd_mount(int argc, char **argv)
+{
+    if (argc != 3) {
+        kprintf("usage: mount <device> <mountpoint>\n"
+                "       mount sda1 /mnt\n");
+        return 1;
+    }
+    struct blockdev *bd = dev_lookup(argv[1]);
+    if (!bd) {
+        kprintf("mount: no such block device: %s\n", argv[1]);
+        return 1;
+    }
+    if (vfs_mount(bd, argv[2]) < 0) {
+        kprintf("mount: cannot mount %s on %s "
+                "(unknown fs or already mounted)\n", bd->name, argv[2]);
+        return 1;
+    }
+    kprintf("mount: %s on %s\n", bd->name, argv[2]);
+    return 0;
+}
+
+static int cmd_umount(int argc, char **argv)
+{
+    if (argc != 2) {
+        kprintf("usage: umount <mountpoint>\n");
+        return 1;
+    }
+    if (vfs_unmount(argv[1]) < 0) {
+        kprintf("umount: not mounted: %s\n", argv[1]);
+        return 1;
+    }
+    kprintf("umount: %s released\n", argv[1]);
+    return 0;
+}
+
+static int cmd_df(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    kprintf("Filesystem      1K-blocks  Device  Mounted on\n");
+    for (size_t i = 0; i < vfs_mount_count(); i++) {
+        struct vfs_fs *m = vfs_mount_get(i);
+        kprintf("%-14s %10llu  %-6s  %s\n", m->ops->name,
+                (unsigned long long)(m->bd->blocks / 2),
+                m->bd->name, m->mountpoint);
+    }
+    return 0;
+}
+
 const struct builtin diskfs_cmds[] = {
     { "mounts",  cmd_mounts,  "list mounted filesystems" },
+    { "mount",   cmd_mount,   "mount a block device (mount sda1 /mnt)" },
+    { "umount",  cmd_umount,  "unmount a filesystem" },
+    { "df",      cmd_df,      "show mounted filesystems and sizes" },
     { "diskls",  cmd_diskls,  "list a directory on a mounted disk" },
     { "diskcat", cmd_diskcat, "print a file from a mounted disk" },
 };

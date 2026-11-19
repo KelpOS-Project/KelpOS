@@ -21,6 +21,8 @@
 #include "block.h"
 #include "vfs.h"
 #include "ramdisk.h"
+#include "ahci.h"
+#include "part.h"
 
 void diskfs_init(void); /* kernel/bin/mounts.c: registers fs backends */
 void kpm_restore(void); /* kernel/bin/kpm.c: package DB from last boot */
@@ -202,6 +204,8 @@ void kmain(void)
     ramfs_mkdir("/home");
     ramfs_mkdir("/home/root");
     ramfs_mkdir("/tmp");
+    ramfs_mkdir("/mnt");
+    ramfs_mkdir("/dev");
     ramfs_mkfile("/etc/motd");
     ramfs_mkfile("/etc/kpm/installed");
     struct ramfs_node *motd = ramfs_resolve_at(ramfs_root(), "/etc/motd");
@@ -209,6 +213,13 @@ void kmain(void)
         ramfs_write(motd, "Welcome to KelpOS - the FOSS Unix-like kernel.\n", 47);
     users_init();
     init_diskfs();
+    ahci_init(); /* SATA disks as sda, sdb, ... (Unix-style names) */
+    size_t ndisks = block_count();
+    for (size_t i = 0; i < ndisks; i++) {
+        struct blockdev *bd = block_get(i);
+        if (bd && strlen(bd->name) == 3 && !strncmp(bd->name, "sd", 2))
+            part_scan(bd); /* sda1, sda2, ... */
+    }
     kpm_restore(); /* re-enable the packages installed last boot */
 
     __asm__ volatile("sti"); /* Limine enters with IF=0: enable IRQs */

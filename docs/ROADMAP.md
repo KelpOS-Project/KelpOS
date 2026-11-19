@@ -38,6 +38,12 @@
 - [x] GLGears and Texobj desktop apps (upstream demos, 320x240,
       animated at ~25 fps)
 - [x] stb_image wallpaper decoding (BMP/PNG/JPEG/GIF/TGA)
+- [x] AHCI/SATA block driver with Unix device names (sda, sda1, ...)
+      and an MBR partition scanner
+- [x] In-kernel `kelpinstall`: writes the bootable install.img to the
+      first SATA disk, no flags and no dry run
+- [x] Unix block tools: lsblk, dd, sync, mount, umount, df
+- [x] `make run-hd` / `make run-installed` for the install round trip
 
 ## M3 — Memory management
 - [ ] PMM (free-list/bitmap instead of bump)

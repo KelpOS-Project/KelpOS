@@ -44,5 +44,9 @@ int cmd_reboot(int argc, char **argv);
 int cmd_shutdown(int argc, char **argv);
 int cmd_desktop(int argc, char **argv); /* kernel/desktop.c */
 int cmd_crash(int argc, char **argv);   /* kernel/bin/crash.c */
+int cmd_kelpinstall(int argc, char **argv); /* kernel/bin/kelpinstall.c */
+int cmd_lsblk(int argc, char **argv);   /* kernel/bin/blockcmd.c */
+int cmd_sync(int argc, char **argv);
+int cmd_dd(int argc, char **argv);
 
 #endif

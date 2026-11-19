@@ -14,6 +14,7 @@ struct blockdev {
     int (*read)(struct blockdev *bd, uint64_t lba, uint32_t count, void *buf);
     int (*write)(struct blockdev *bd, uint64_t lba, uint32_t count,
                  const void *buf); /* may be 0: read-only device */
+    int (*flush)(struct blockdev *bd); /* may be 0: nothing to flush */
     void *ctx;
 };
 

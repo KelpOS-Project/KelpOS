@@ -41,7 +41,9 @@ int vfs_mount(struct blockdev *bd, const char *mountpoint)
             continue;
         struct vfs_fs *m = &mounts_tab[mounts_n];
         memset(m, 0, sizeof(*m));
-        m->mountpoint = mountpoint;
+        strncpy(m->mp, mountpoint, sizeof(m->mp) - 1);
+        m->mp[sizeof(m->mp) - 1] = 0;
+        m->mountpoint = m->mp;
         m->bd = bd;
         m->ops = ops_tab[i];
         if (ops_tab[i]->mount(m) == 0) {
