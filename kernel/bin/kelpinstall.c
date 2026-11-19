@@ -56,11 +56,12 @@ int cmd_kelpinstall(int argc, char **argv)
     struct blockdev *bd = install_target(sectors);
     if (!bd) {
         if (!ahci_present())
-            kprintf("kelpinstall: no SATA disk found "
-                    "(attach one with -drive if=ide)\n");
+            kprintf("kelpinstall: no SATA disk found\n");
         else
-            kprintf("kelpinstall: no SATA disk with at least %llu MiB\n",
+            kprintf("kelpinstall: no SATA disk with at least %llu MiB free "
+                    "for the install image\n",
                     (unsigned long long)((sectors + 2047) / 2048));
+        kprintf("kelpinstall: run 'lsblk' to list the block devices\n");
         return 1;
     }
 
